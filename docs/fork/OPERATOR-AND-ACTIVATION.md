@@ -84,3 +84,26 @@ Credit consumption is a dedicated operator action, not a generic public proxy.
 
 The former full Manager mode remains in this fork for development compatibility;
 it is no longer needed for the deployment above.
+
+## Automatic recovery after external quota resets
+
+The companion reconciles cooldowns at startup and every minute, independently
+of window-start schedules. It reads live provider quota only for enabled Codex
+accounts whose native CPA state reports `usage_limit_reached`. The old future
+retry deadline never prevents this recheck. No prompts, credits, account toggles,
+or configuration changes are used to check recovery.
+
+Recovery requires explicit `allowed: true`, `limit_reached: false`, valid usage
+percentages below 100% in the reported primary/weekly windows, and healthy
+additional model buckets when present. Missing/invalid data, failed quota reads,
+real exhaustion and unrelated authentication/network errors do not authorize a
+clear. The final native state is reread under the mutation lock so a user toggle
+or newer 429 during the quota read cancels that recovery attempt.
+
+Only the selected account's local cooldown is cleared via native reset-quota.
+If requests repeatedly return 429 despite optimistic metadata, clear attempts
+back off for 1, 2, 4, 8 and at most 15 minutes, while quota reads continue every
+minute. Confirmed exhaustion resets the retry history, so a later external reset
+is checked on the next tick. Healthy accounts are not continually quota-polled.
+Retry state is memory-only; a companion restart performs a fresh quota check.
+Successful recovery and clear failures are logged with opaque account IDs.

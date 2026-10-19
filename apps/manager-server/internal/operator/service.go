@@ -1,5 +1,5 @@
-// Package operator provides a deliberately narrow public account dashboard and
-// a private, UI-configurable window-activation scheduler. OAuth stays in CPA.
+// Package operator provides a narrow public account dashboard, window activation
+// and quota recovery. OAuth stays in CPA.
 package operator
 
 import (
@@ -41,18 +41,21 @@ type Quota struct {
 // This DTO intentionally cannot decode or expose access/refresh/id tokens,
 // configuration, filesystem paths, headers, proxies, or client API keys.
 type Account struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Index      string `json:"auth_index"`
-	Provider   string `json:"provider"`
-	Email      string `json:"email"`
-	Disabled   bool   `json:"disabled"`
-	Status     string `json:"status"`
-	Success    int64  `json:"success"`
-	Failed     int64  `json:"failed"`
-	Quota      *Quota `json:"quota,omitempty"`
-	QuotaError bool   `json:"quota_error,omitempty"`
-	Identity   struct {
+	StatusMessage  string `json:"status_message"`
+	Unavailable    bool   `json:"unavailable"`
+	NextRetryAfter string `json:"next_retry_after"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Index          string `json:"auth_index"`
+	Provider       string `json:"provider"`
+	Email          string `json:"email"`
+	Disabled       bool   `json:"disabled"`
+	Status         string `json:"status"`
+	Success        int64  `json:"success"`
+	Failed         int64  `json:"failed"`
+	Quota          *Quota `json:"quota,omitempty"`
+	QuotaError     bool   `json:"quota_error,omitempty"`
+	Identity       struct {
 		AccountID string `json:"chatgpt_account_id"`
 	} `json:"id_token"`
 }
@@ -76,15 +79,17 @@ type Settings struct {
 	Runs      map[string]Run `json:"runs"`
 }
 type Service struct {
-	resolve  Resolve
-	path     string
-	client   *http.Client
-	mu       sync.Mutex
-	settings Settings
-	runMu    sync.Mutex
-	cacheMu  sync.Mutex
-	cached   []Account
-	cacheAt  time.Time
+	resolve    Resolve
+	path       string
+	client     *http.Client
+	mu         sync.Mutex
+	settings   Settings
+	runMu      sync.Mutex
+	cacheMu    sync.Mutex
+	cached     []Account
+	cacheAt    time.Time
+	recoveryMu sync.Mutex
+	recovery   map[string]recoveryState
 }
 
 func New(resolve Resolve, path string) (*Service, error) {
@@ -469,6 +474,7 @@ func (s *Service) Tick(ctx context.Context, now time.Time) {
 	}
 }
 func (s *Service) Start(ctx context.Context) {
+	go s.recoveryLoop(ctx)
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
