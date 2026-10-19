@@ -7,6 +7,7 @@ This tool never opens the CPAMP Gateway and never declares runtimeEffective.
 """
 
 import argparse
+import datetime
 import http.client
 import json
 import os
@@ -35,14 +36,24 @@ def request(port, method, path, authorization=None, payload=None):
         if response.read(1):
             raise StopProof("HTTP response exceeded evidence limit")
         return response.status, data
-    except OSError as exc:
-        raise StopProof("trusted loopback service unreachable") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        # Never echo exception/response text: it may contain credentials.
+        raise StopProof("trusted loopback HTTP exchange failed; no retry") from exc
     finally:
         connection.close()
 
 
-def json_value(port, path, management_key):
+def event(evidence, **fields):
+    evidence["events"].append({
+        "utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "elapsedSeconds": round(time.monotonic() - evidence["_started"], 6),
+        **fields,
+    })
+
+
+def json_value(port, path, management_key, evidence, phase):
     status, data = request(port, "GET", path, management_key)
+    event(evidence, phase=phase, action="config-get", path=path, status=status)
     if status != 200:
         raise StopProof("Management safe read rejected: HTTP " + str(status))
     try:
@@ -57,8 +68,7 @@ def check_ingress(port, phase, evidence):
         status, _ = request(port, "GET", "/v1/models",
                             {"absent": None, "wrong": "synthetic-invalid",
                              "valid": evidence["_latest_secret"]}[mode])
-        evidence["events"].append({"phase": phase, "edge": "ingress",
-                                   "credential": mode, "status": status})
+        event(evidence, phase=phase, edge="ingress", credential=mode, status=status)
         if status != 503:
             raise StopProof("Ingress forwarded or changed Pending at " + phase)
 
@@ -67,8 +77,7 @@ def check_cpa(port, phase, tokens, evidence):
     statuses = {}
     for name, token in tokens.items():
         status, _ = request(port, "GET", "/v1/models", token)
-        evidence["events"].append({"phase": phase, "edge": "private-cpa",
-                                   "credential": name, "status": status})
+        event(evidence, phase=phase, edge="private-cpa", credential=name, status=status)
         statuses[name] = status
     return statuses
 
@@ -77,26 +86,49 @@ def set_only_client_keys(port, management_key, values, phase, evidence):
     # No retries: a timeout leaves write state unknown and the experiment STOPS.
     status, _ = request(port, "PUT", "/v8/management/config/access/api-keys",
                         management_key, values)
-    evidence["events"].append({"phase": phase, "action": "config-put",
-                               "status": status, "keyCount": len(values)})
+    event(evidence, phase=phase, action="config-put", status=status, keyCount=len(values))
     if status != 200:
         raise StopProof("Official CPA Client Key write failed at " + phase)
     stored = json_value(port, "/v8/management/config/access/api-keys",
-                        management_key)
+                        management_key, evidence, phase)
     if stored != values:
         raise StopProof("Management configuration readback mismatch at " + phase)
+    event(evidence, phase=phase, action="readback-matched", keyCount=len(values))
     # Readback is not an effective-provider acknowledgment.
 
 
-def await_auth(port, phase, expected, tokens, ingress_port, evidence, deadline):
+def await_auth(port, phase, expected, previous, tokens, ingress_port, evidence, deadline):
     end = time.monotonic() + deadline
+    stable_since = None
+    samples = 0
+    reached = set()
     while True:
+        if time.monotonic() >= end:
+            raise StopProof("Live CPA auth stability timed out at " + phase)
         check_ingress(ingress_port, phase, evidence)
         observed = check_cpa(port, phase, tokens, evidence)
+        now = time.monotonic()
+        event(evidence, phase=phase, action="auth-sweep", statuses=observed,
+              observation="candidate" if observed == expected else "transition")
+        if now >= end:
+            raise StopProof("Live CPA auth stability timed out at " + phase)
+        for name, status in observed.items():
+            if status not in (previous[name], expected[name]):
+                raise StopProof("Unexpected CPA authentication status at " + phase)
+            if name in reached and status != expected[name]:
+                raise StopProof("CPA authentication regressed at " + phase)
+            if status == expected[name]:
+                reached.add(name)
         if observed == expected:
-            return
-        if time.monotonic() >= end:
-            raise StopProof("Live CPA auth did not reach expected state at " + phase)
+            if stable_since is None:
+                stable_since = now
+            samples += 1
+            # A sequence is not an atomic snapshot. Require both elapsed time
+            # and repeated sweeps; this only proves the bounded sampled window.
+            if now - stable_since >= 2 and samples >= 5:
+                event(evidence, phase=phase, action="stable-window",
+                      durationSeconds=round(now - stable_since, 6), sweeps=samples)
+                return
         time.sleep(0.25)
 
 
@@ -110,15 +142,29 @@ def main():
             os.environ.get("CPAMP_PROOF_DISPOSABLE_VOLUME") != "1"):
         raise StopProof("Disposable proof must be explicitly attested in environment")
     if (args.cpa_port != 8317 or not 1 <= args.ingress_port <= 65535 or
-            args.ingress_port == args.cpa_port or not 1 <= args.reload_seconds <= 60):
+            args.ingress_port == args.cpa_port or not 3 <= args.reload_seconds <= 60):
         raise StopProof("Unsupported proof ports or reload budget")
     management = os.environ.get("CPAMP_PROOF_CPA_MANAGEMENT_KEY", "")
-    if len(management) < 32 or any(ch.isspace() for ch in management):
+    if len(management) < 32 or any(not 33 <= ord(ch) <= 126 for ch in management):
         raise StopProof("Missing private synthetic Management credential")
 
-    evidence = {"result": "STOP", "binaryVerification": "NOT_CHECKED_BY_RUNNER",
-                "events": [], "_latest_secret": None}
-    cfg = json_value(args.cpa_port, "/v8/management/config", management)
+    evidence = {"result": "STOP", "binaryVerification": "OPERATOR_PREFLIGHT_REQUIRED",
+                "gatewayAuthorized": False, "runtimeEffective": False,
+                "events": [], "_latest_secret": None, "_started": time.monotonic()}
+    try:
+        run(args, management, evidence)
+    except StopProof as exc:
+        evidence["reason"] = str(exc)
+        raise
+    finally:
+        # No automated rollback/retry after an uncertain mutation.
+        evidence.pop("_latest_secret", None)
+        evidence.pop("_started", None)
+        print(json.dumps(evidence, sort_keys=True), flush=True)
+
+
+def run(args, management, evidence):
+    cfg = json_value(args.cpa_port, "/v8/management/config", management, evidence, "preflight")
     if not isinstance(cfg, dict):
         raise StopProof("Management config projection is not an object")
     server = cfg.get("server", {})
@@ -140,44 +186,35 @@ def main():
             not isinstance(plugins, dict) or plugins.get("enabled") is not False):
         raise StopProof("Management view is not the constrained loopback CPA seed")
     if json_value(args.cpa_port, "/v8/management/config/access/api-keys",
-                  management) != []:
+                  management, evidence, "preflight") != []:
         raise StopProof("Refusing to touch nonempty Client Key configuration")
 
     first = "cpamp_sk_" + secrets.token_hex(32)
     second = "cpamp_sk_" + secrets.token_hex(32)
     evidence["_latest_secret"] = first
-    try:
-        check_ingress(args.ingress_port, "initial", evidence)
-        # With CPA's EMPTY provider list, no client authorization occurs.
-        baseline = check_cpa(args.cpa_port, "empty", {"absent": None}, evidence)
-        if baseline["absent"] != 200:
-            raise StopProof("CPA zero-provider baseline differs from pinned contract")
+    tokens = {"absent": None, "wrong": "synthetic-invalid", "valid": first}
+    empty = {name: 200 for name in tokens}
+    # EMPTY official CPA provider list allows anonymous requests, not CPAMP grants.
+    await_auth(args.cpa_port, "empty", empty, empty, tokens,
+               args.ingress_port, evidence, args.reload_seconds)
 
-        set_only_client_keys(args.cpa_port, management, [first], "install", evidence)
-        await_auth(args.cpa_port, "install",
-                   {"absent": 401, "wrong": 401, "valid": 200},
-                   {"absent": None, "wrong": "synthetic-invalid", "valid": first},
-                   args.ingress_port, evidence, args.reload_seconds)
+    set_only_client_keys(args.cpa_port, management, [first], "install", evidence)
+    await_auth(args.cpa_port, "install",
+               {"absent": 401, "wrong": 401, "valid": 200}, empty, tokens,
+               args.ingress_port, evidence, args.reload_seconds)
 
-        set_only_client_keys(args.cpa_port, management, [second], "replace", evidence)
-        evidence["_latest_secret"] = second
-        await_auth(args.cpa_port, "replace",
-                   {"old": 401, "new": 200, "absent": 401},
-                   {"old": first, "new": second, "absent": None},
-                   args.ingress_port, evidence, args.reload_seconds)
+    set_only_client_keys(args.cpa_port, management, [second], "replace", evidence)
+    evidence["_latest_secret"] = second
+    tokens = {"old": first, "new": second, "absent": None, "wrong": "synthetic-invalid"}
+    replaced = {"old": 401, "new": 200, "absent": 401, "wrong": 401}
+    await_auth(args.cpa_port, "replace", replaced,
+               {"old": 200, "new": 401, "absent": 401, "wrong": 401}, tokens,
+               args.ingress_port, evidence, args.reload_seconds)
 
-        set_only_client_keys(args.cpa_port, management, [], "clear-last", evidence)
-        # Raw CPA may revert to *anonymous* access. This is an observed hazard,
-        # never a CPAMP grant. Ingress must still be 503 for every attempt.
-        await_auth(args.cpa_port, "clear-last", {"absent": 200},
-                   {"absent": None}, args.ingress_port, evidence,
-                   args.reload_seconds)
-        evidence["result"] = "PASS_WITH_EXPLICIT_STOPS"
-    finally:
-        # No automated rollback/retry after an uncertain mutation. Destroy the
-        # entire proof stack and synthetic volumes under operator control.
-        evidence.pop("_latest_secret", None)
-        print(json.dumps(evidence, sort_keys=True), flush=True)
+    set_only_client_keys(args.cpa_port, management, [], "clear-last", evidence)
+    await_auth(args.cpa_port, "clear-last", {name: 200 for name in tokens}, replaced,
+               tokens, args.ingress_port, evidence, args.reload_seconds)
+    evidence["result"] = "PASS_WITH_EXPLICIT_STOPS"
 
 
 if __name__ == "__main__":

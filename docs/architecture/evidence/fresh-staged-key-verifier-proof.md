@@ -54,10 +54,62 @@ The test-only [runner](../../../bin/ci/fresh-v8-private-key-effective-probe.py) 
 1. Create a unique disposable Compose project with empty synthetic volumes. Use only the existing pinned official v8.0.13 loopback-proof image; independently verify the live CPA executable SHA-256 `b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41` and record the exact source, image and runtime generation.
 2. Before *first* Runtime start, make an untracked, private, temporary copy of `docker/runtime/config.v8.loopback-proof.yaml` with a fresh strong synthetic `management.secret-key`. Mount it read-only at `/usr/local/share/cpamp/runtime/config.seed.yaml` in an isolated, untracked Compose override. The entrypoint copies that seed only if `/runtime/gateway/config.yaml` is absent. Do not change tracked seeds or start with any existing volume. Keep Management, CPA and Runtime control ports loopback-only.
 3. Complete authorized Fresh bootstrap/start using the existing operation and generation contracts. Confirm live CPA, no user/provider/OAuth credentials or real upstream configuration, and initially empty `access.api-keys`.
-4. Run Python 3 inside the *trusted Runtime network namespace* with environment variables `CPAMP_PRIVATE_CPA_KEY_PROOF=1`, `CPAMP_PROOF_DISPOSABLE_VOLUME=1` and `CPAMP_PROOF_CPA_MANAGEMENT_KEY=<synthetic-management-secret>`. Invoke `python3 bin/ci/fresh-v8-private-key-effective-probe.py --ingress-port 28471` (substitute the actual disposable Ingress port if changed). Only `127.0.0.1:8317` and `127.0.0.1:<ingress-port>` are addressed. The opt-in flags **do not** replace explicit verification of new empty volumes.
-5. The runner checks private CPA model auth before and after official `PUT /v8/management/config/access/api-keys` install/replace/clear operations, polls live missing/wrong/valid-Key responses, and demands public Ingress `503` throughout. Its JSON event log contains only states/statuses, not plaintext keys. Management readback is not considered effective auth proof. If the last CPA Key removal restores anonymous access, record this as the upstream security hazard, not CPAMP authorization.
+4. Use the one-shot Python container below to join the *trusted Runtime network namespace*. Runtime has neither Python nor this script; do not install either in the product image. Only `127.0.0.1:8317` and `127.0.0.1:<ingress-port>` are addressed. The opt-in flags **do not** replace explicit verification of new empty volumes.
+5. The runner checks private CPA model auth before and after official `PUT /v8/management/config/access/api-keys` install/replace/clear operations and demands public Ingress `503` throughout. Each phase needs **at least 2 seconds and 5 consecutive matching sweeps**, within the total `--reload-seconds` budget (default 15; allowed 3–60). Old-to-new transient decisions are recorded; an unexpected HTTP status, per-credential regression after first reaching its target, unreachable service or timeout stops immediately. Each HTTP result and sweep has UTC and monotonic elapsed timestamps. Sequential sweeps are sampled evidence, **not an atomic observation or a reload acknowledgment**. Reports never contain plaintext keys. If the last CPA Key removal restores anonymous access, record this as official CPA behavior, not CPAMP authorization.
 6. A separate independent observer must still verify whether real synthetic model requests reach a synthetic upstream; the script's `/v1/models` request decisions do **not** prove upstream nonarrival/arrival, streaming or all supported model routes. On any unconfirmed write, unexpected response, topology change, security discrepancy or preserved `409` fence, STOP and destroy only the new disposable experiment containers/network/volumes. Do not retry uncertain writes, leak raw synthetic secrets into public issues, or bypass the generation fence.
 
 This experiment does **not** implement automatic CPA config application, effective-Key attestation, revocation, reload completion acknowledgment, Gateway admission, or cross-generation restart recovery. Only the previously demonstrated Pending Ingress behavior is allowed. Gateway/Beta/External/Upgrade/Release continue STOP.
 
 Overdesign, overdefense, overabstraction and scope expansion: PASS; one test-only runner and this existing evidence document, no new product owner or storage authority.
+
+### Reproducible one-shot Python execution
+
+Run from the exact reviewed worktree. Docker Engine must be Linux/amd64; Compose must support the existing namespace-sharing proof profile. Prepare a **unique** project and a private ignored scratch directory; check the intended public loopback port is free. Do not enable shell tracing. Never print the seed, environment file, full container environment, Management config body, initialization handoff or bootstrap responses.
+
+```sh
+umask 077
+mkdir -p bin/tmp
+proof_dir=$(mktemp -d "$PWD/bin/tmp/pr1012-private.XXXXXX")
+export proof_dir
+python3 - <<'PY'
+import json, os, pathlib, secrets
+p = pathlib.Path(os.environ['proof_dir'])
+key = 'cpamp_proof_management_' + secrets.token_hex(32)
+seed = pathlib.Path('docker/runtime/config.v8.loopback-proof.yaml').read_text()
+assert seed.count("secret-key: ''") == 1
+(p / 'seed.yaml').write_text(seed.replace("secret-key: ''", 'secret-key: ' + json.dumps(key)))
+(p / 'probe.env').write_text('CPAMP_PRIVATE_CPA_KEY_PROOF=1\n'
+    'CPAMP_PROOF_DISPOSABLE_VOLUME=1\nCPAMP_PROOF_CPA_MANAGEMENT_KEY=' + key + '\n')
+PY
+```
+
+Use an **untracked** override to bind `$proof_dir/seed.yaml` read-only at `/usr/local/share/cpamp/runtime/config.seed.yaml` on `cpamp-runtime`, before its first start. Keep the existing `docker-compose.fresh-auth-proof.yml` network topology, volume declarations and port bindings; no Docker socket, extra published ports, external volumes or user paths. Build reviewed source with task-specific image tags. Complete the existing Fresh initialize/claim/Admin/new-managed strategy workflow. The existing 409 generation fence is a STOP, never an invitation to reset the database or call a different Start path.
+
+Before any Client Key write, verify and privately record:
+
+- Project/container/network/volume creation times and Compose labels; names must not have existed before this run. Inspect the resolved Compose config privately and assert every mount belongs to this new project except the single synthetic seed. Confirm initially empty volume contents **before starting services**, and no OAuth/auth/plugin files before running the probe.
+- Container IDs, image IDs, Linux/amd64, actual process executable/arguments/UID, `/proc/<cpa-pid>/exe` SHA-256, current Runtime identity/generation/active artifact and network namespace IDs. Recheck the same identity after execution; no service restart or other writer may overlap the run. Do not use stale image tags or a saved checksum alone.
+- CPA 8317, Runtime 9081, Manager 18319 and Ingress control 9082 listen only on loopback. Only Ingress is published at host `127.0.0.1:$CPAMP_PROOF_PUBLIC_PORT`. An ordinary same-bridge participant must fail to connect to private ports, with a reachable Ingress/503 positive control.
+- Full persisted seed/config contains only the constrained synthetic settings; no Provider, OAuth, existing Client Key, environment credentials, plugin or real upstream. Management credential comes from the private seed above. Runtime image remains without Python (`docker exec "$runtime_id" sh -c '! command -v python3'`). Read-only Management config/key-list checks must agree before writes.
+
+After these checks, set `runtime_id` from the **exact** project's `cpamp-runtime` container, `probe_image` to a locally inspected Linux/amd64 Python image ID (for example `python:3.13-alpine` resolved with `docker image inspect --format '{{.Id}}'`), and `CPAMP_PROOF_PUBLIC_PORT` to the profile's actual port. Then:
+
+```sh
+test -n "$runtime_id" && test -n "$probe_image"
+docker run --rm --pull=never --platform linux/amd64 \
+  --network "container:$runtime_id" --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --user 65534:65534 \
+  --env-file "$proof_dir/probe.env" \
+  --mount "type=bind,src=$PWD/bin/ci/fresh-v8-private-key-effective-probe.py,dst=/probe.py,readonly" \
+  "$probe_image" python3 -B /probe.py --ingress-port "$CPAMP_PROOF_PUBLIC_PORT" \
+  >"$proof_dir/probe.json" 2>"$proof_dir/probe.stderr"
+```
+
+No production image change, extra port or Docker socket is required. Read the exit status and both evidence files even on failure; STOP means no further config write, retry or automatic rollback. Keep the private evidence directory mode 0700/files 0600. Only publish a reviewed, secret-scanned summary. Destroy only the task-owned project containers/network/new volumes after collecting evidence; never run a global prune. Protect/remove private seed material under the same task-owned cleanup scope.
+
+Offline checks (safe without Docker or credentials):
+
+```sh
+python3 -m py_compile bin/ci/fresh-v8-private-key-effective-probe.py bin/ci/fresh-v8-private-key-effective-probe-test.py
+python3 bin/ci/fresh-v8-private-key-effective-probe-test.py
+```
