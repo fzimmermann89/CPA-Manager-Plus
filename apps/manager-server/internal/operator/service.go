@@ -550,3 +550,45 @@ func validRequestID(id string) bool {
 	}
 	return true
 }
+
+// ConfigureAccountWindow changes only one account's fixed-model schedule.
+// Merge under the same locks as the scheduler to preserve other accounts/runs.
+func (s *Service) ConfigureAccountWindow(ctx context.Context, id string, enabled bool, times []string) error {
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	a, err := s.find(ctx, id)
+	if err != nil {
+		return err
+	}
+	if a.Provider != "codex" {
+		return errors.New("Codex account required")
+	}
+	if enabled && len(times) == 0 {
+		return errors.New("add at least one daily time")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v := s.settings
+	v.Schedules = append([]Schedule(nil), s.settings.Schedules...)
+	schedule := Schedule{AccountID: id, Enabled: enabled, Times: times, Model: "gpt-6-luna", Effort: "low"}
+	found := false
+	for i, x := range v.Schedules {
+		if x.AccountID == id {
+			v.Schedules[i] = schedule
+			found = true
+			break
+		}
+	}
+	if !found {
+		v.Schedules = append(v.Schedules, schedule)
+	}
+	if err = validate(v); err != nil {
+		return err
+	}
+	old := s.settings
+	s.settings = v
+	if err = s.saveLocked(); err != nil {
+		s.settings = old
+	}
+	return err
+}

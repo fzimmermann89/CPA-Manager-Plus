@@ -310,3 +310,60 @@ func TestBankedResetUsesOnlySelectedAccountAndUUID(t *testing.T) {
 		t.Fatal("reset failed", w.Code, calls)
 	}
 }
+
+func TestPublicPerAccountWindows(t *testing.T) {
+	s, calls := mockService(t)
+	// An edit must preserve other accounts and scheduler deduplication records.
+	s.settings.Schedules = []Schedule{{AccountID: "other", Enabled: true, Times: []string{"08:00"}, Model: "gpt-6-luna", Effort: "low"}}
+	s.settings.Runs["other"] = Run{Slot: "saved", Result: "five-hour window started"}
+	h := s.PublicHandler("public-password")
+	request := func(method, path, body, origin string, auth bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if auth {
+			req.Header.Set("Authorization", "Bearer public-password")
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+	if w := request("GET", "/api/windows", "", "", false); w.Code != 401 {
+		t.Fatal("anonymous windows", w.Code)
+	}
+	body := `{"id":"` + publicID("a") + `","enabled":true,"times":["05:00","10:00"]}`
+	if w := request("PUT", "/api/account/window", body, "https://evil.test", true); w.Code != 403 {
+		t.Fatal("window CSRF allowed", w.Code)
+	}
+	if w := request("PUT", "/api/account/window", strings.TrimSuffix(body, "}")+`,"model":"other"}`, "", true); w.Code != 400 {
+		t.Fatal("arbitrary config allowed", w.Code)
+	}
+	if w := request("PUT", "/api/account/window", body, "", true); w.Code != 200 {
+		t.Fatal("save window", w.Code, w.Body.String())
+	}
+	settings := s.Settings()
+	if len(settings.Schedules) != 2 || settings.Schedules[0].AccountID != "other" || settings.Runs["other"].Slot != "saved" {
+		t.Fatal("changed another account or runs")
+	}
+	if w := request("GET", "/api/windows", "", "", true); w.Code != 200 || strings.Contains(w.Body.String(), `"account_id"`) || strings.Contains(w.Body.String(), "@") || !strings.Contains(w.Body.String(), publicID("a")) {
+		t.Fatal("public window DTO", w.Code, w.Body.String())
+	}
+	for _, bad := range []string{`{"id":"` + publicID("a") + `","enabled":true,"times":[]}`, `{"id":"` + publicID("a") + `","enabled":true,"times":["25:00"]}`} {
+		if w := request("PUT", "/api/account/window", bad, "", true); w.Code != 400 {
+			t.Fatal("invalid times allowed", w.Code)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if w := request("POST", "/api/account/window/start", `{"id":"`+publicID("a")+`"}`, "", true); w.Code != 200 {
+			t.Fatal("public start", w.Code, w.Body.String())
+		}
+	}
+	if *calls != 1 {
+		t.Fatal("active window restarted", *calls)
+	}
+	if w := request("GET", "/api/settings", "", "", true); w.Code != 404 {
+		t.Fatal("general config became public")
+	}
+}

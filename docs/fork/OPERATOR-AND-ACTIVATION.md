@@ -1,7 +1,7 @@
 # Minimal companion to CLIProxyAPI
 
 Run native CLIProxyAPI unchanged. This fork's `cmd/cpa-operator` adds a small public
-account view and private window-start schedules. It uses only Go's standard
+account view with per-account window-start controls. It uses only Go's standard
 library: no Manager database, collectors, credential copies, or React build.
 The full native CLIProxyAPI admin UI is forwarded only through the private
 listener, including banked-reset support offered by that UI.
@@ -30,6 +30,12 @@ Serve only; never publish it through the internet gateway or Funnel.
 - `GET /api/accounts`: short account names (email local part), opaque account
   IDs, quota and cached banked-reset count. No domains, OAuth data or file paths.
 - `POST /api/account/status`: exactly `{id, disabled}`.
+- `GET /api/windows`: per-account schedule state, daily times, timezone,
+  next run and last result, keyed only by opaque account IDs.
+- `PUT /api/account/window`: exactly `{id, enabled, times}`; merges only this
+  account's fixed Luna/low schedule and preserves other accounts and run records.
+- `POST /api/account/window/start`: exactly `{id}`; checks live quota and
+  starts only an expired five-hour window. Disabled accounts remain skipped.
 - `POST /api/account/reset`: exactly `{id, request_id}`. `request_id` is a UUID.
   Posts one explicit redemption to the fixed upstream reset-consume endpoint
   using the selected account's existing CPA auth. No automatic resets/retries.
@@ -47,7 +53,7 @@ accounts that expose only a weekly window.
 ## Private settings
 
 - `/management.html`: original native CLIProxyAPI panel and management routes.
-- `/activation/`: small scheduler form, authenticated by the existing CPA
+- `/activation/`: optional private scheduler form, authenticated by the existing CPA
   management key. This page keeps the key in memory only.
 
 Schedules persist in an atomic 0600 JSON file, using account IDs already in CPA.

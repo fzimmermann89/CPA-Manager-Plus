@@ -75,6 +75,36 @@ func accountViews(list []Account, private bool) []map[string]any {
 	}
 	return out
 }
+
+// publicWindows exposes only opaque account IDs and window controls.
+func (s *Service) publicWindows(ctx context.Context) (map[string]any, error) {
+	list, err := s.accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	settings := s.Settings()
+	out := map[string]any{}
+	for _, a := range list {
+		if a.Provider != "codex" {
+			continue
+		}
+		v := map[string]any{"enabled": false, "times": []string{}, "timezone": settings.Timezone}
+		for _, x := range settings.Schedules {
+			if x.AccountID == a.ID {
+				v["enabled"] = x.Enabled
+				v["times"] = x.Times
+				v["next_run"] = x.NextRun
+				break
+			}
+		}
+		if run, ok := settings.Runs[a.ID]; ok {
+			v["last_result"] = run.Result
+			v["last_at"] = run.At
+		}
+		out[publicID(a.ID)] = v
+	}
+	return out, nil
+}
 func (s *Service) PublicHandler(password string) http.Handler {
 	// Public listener has no reference to the full Manager router. Supplying an
 	// admin key, forwarding headers, alternate verbs, paths or encodings cannot
@@ -135,6 +165,58 @@ func (s *Service) PublicHandler(password string) http.Handler {
 				return
 			}
 			reply(w, 200, publicAccounts(list))
+		case r.URL.Path == "/api/windows" && r.Method == "GET":
+			v, e := s.publicWindows(r.Context())
+			if e != nil {
+				reply(w, 502, map[string]string{"error": "CPA unavailable"})
+				return
+			}
+			reply(w, 200, v)
+		case r.URL.Path == "/api/account/window" && r.Method == "PUT":
+			var v struct {
+				ID      string   `json:"id"`
+				Enabled *bool    `json:"enabled"`
+				Times   []string `json:"times"`
+			}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			if v.Enabled == nil {
+				reply(w, 400, map[string]string{"error": "enabled required"})
+				return
+			}
+			id, e := s.resolvePublicID(r.Context(), v.ID)
+			if e != nil {
+				reply(w, 404, map[string]string{"error": "account not found"})
+				return
+			}
+			if e = s.ConfigureAccountWindow(r.Context(), id, *v.Enabled, v.Times); e != nil {
+				reply(w, 400, map[string]string{"error": e.Error()})
+				return
+			}
+			reply(w, 200, map[string]bool{"ok": true})
+		case r.URL.Path == "/api/account/window/start" && r.Method == "POST":
+			var v struct {
+				ID string `json:"id"`
+			}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			id, e := s.resolvePublicID(r.Context(), v.ID)
+			if e != nil {
+				reply(w, 404, map[string]string{"error": "account not found"})
+				return
+			}
+			result, e := s.RunNow(r.Context(), id)
+			s.cacheMu.Lock()
+			s.cacheAt = time.Time{}
+			s.cacheMu.Unlock()
+			if e != nil {
+				reply(w, 502, map[string]string{"error": result})
+				return
+			}
+			reply(w, 200, map[string]string{"result": result})
+
 		case r.URL.Path == "/api/account/status" && r.Method == "POST":
 			var v struct {
 				ID       string `json:"id"`

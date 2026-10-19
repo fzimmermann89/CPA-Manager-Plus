@@ -172,6 +172,40 @@
       font-size: 13px;
       min-height: 36px;
     }
+    .window {
+      grid-column: 1/-1;
+      font-size: 13px;
+    }
+    .window summary {
+      cursor: pointer;
+      color: var(--muted);
+      width: fit-content;
+    }
+    .window form {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .window label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .window .times {
+      width: 250px;
+      max-width: 100%;
+      min-width: 0;
+    }
+    .window button {
+      font-size: 13px;
+      padding: 6px 9px;
+      min-height: 36px;
+    }
+    .window small {
+      margin-top: 8px;
+    }
     [hidden] {
       display: none !important;
     }
@@ -252,6 +286,8 @@
     const q = (s) => document.querySelector(s),
       base = location.pathname.replace(/\/$/, ''),
       pending = new Map();
+    let windows = {};
+    const openedWindows = new Set();
     q('#title').textContent = base.endsWith('/job') ? 'Job accounts' : 'Private accounts';
     function el(tag, text) {
       const n = document.createElement(tag);
@@ -319,6 +355,76 @@
       return Object.values(a.quota?.rate_limit || {}).find(
         (w) => w?.limit_window_seconds === seconds
       );
+    }
+    function windowControls(a) {
+      const detail = el('details'),
+        summary = el('summary'),
+        form = el('form'),
+        schedule = windows[a.id] || { enabled: false, times: [], timezone: 'Europe/Berlin' },
+        check = el('input'),
+        times = el('input'),
+        save = el('button', 'Save'),
+        start = el('button', 'Start now');
+      detail.className = 'window';
+      detail.open = openedWindows.has(a.id);
+      summary.textContent =
+        'Window' + (schedule.enabled ? ' · ' + (schedule.times || []).join(', ') : '');
+      detail.append(summary);
+      detail.ontoggle = () => {
+        if (detail.open) openedWindows.add(a.id);
+        else openedWindows.delete(a.id);
+      };
+      check.type = 'checkbox';
+      check.checked = schedule.enabled;
+      check.setAttribute('aria-label', 'Schedule window starts for ' + a.email);
+      const label = el('label');
+      label.append(check, el('span', 'Schedule'));
+      times.className = 'times';
+      times.value = (schedule.times || []).join(', ');
+      times.placeholder = '05:00, 10:00, 15:00, 20:00';
+      times.setAttribute('aria-label', 'Daily window start times for ' + a.email);
+      times.title = 'Daily times, separated by commas';
+      start.type = 'button';
+      start.disabled = a.disabled || !limit(a, 18000);
+      start.title = 'Send a minimal request only if the five-hour window has expired';
+      form.append(label, times, el('span', schedule.timezone), save, start);
+      detail.append(form);
+      if (schedule.next_run)
+        detail.append(el('small', 'Next ' + new Date(schedule.next_run * 1000).toLocaleString()));
+      if (schedule.last_result) detail.append(el('small', schedule.last_result));
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        save.disabled = true;
+        try {
+          await api('/api/account/window', 'PUT', {
+            id: a.id,
+            enabled: check.checked,
+            times: times.value
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean),
+          });
+          notice('Saved.');
+          await load();
+        } catch (e) {
+          notice(e.message, true);
+        } finally {
+          save.disabled = false;
+        }
+      };
+      start.onclick = async () => {
+        start.disabled = true;
+        try {
+          const result = await api('/api/account/window/start', 'POST', { id: a.id });
+          notice(result.result);
+          await load();
+        } catch (e) {
+          notice(e.message, true);
+        } finally {
+          start.disabled = a.disabled || !limit(a, 18000);
+        }
+      };
+      return detail;
     }
     function render(accounts) {
       const body = q('#accounts');
@@ -399,6 +505,7 @@
         };
         resets.append(text, use);
         row.append(resets);
+        if (a.provider === 'codex') row.append(windowControls(a));
         body.append(row);
       }
       if (!accounts.length) body.append(el('p', 'No accounts connected.'));
@@ -406,7 +513,9 @@
     async function load() {
       q('#refresh').disabled = true;
       try {
-        render(await api('/api/accounts'));
+        const [accounts, controls] = await Promise.all([api('/api/accounts'), api('/api/windows')]);
+        windows = controls;
+        render(accounts);
         unlocked(true);
         return true;
       } catch (e) {
