@@ -29,9 +29,13 @@ type Limits struct {
 	Primary   *Window `json:"primary_window"`
 	Secondary *Window `json:"secondary_window"`
 }
+type ResetCredits struct {
+	Available int `json:"available_count"`
+}
 type Quota struct {
-	Plan   string  `json:"plan_type"`
-	Limits *Limits `json:"rate_limit"`
+	Resets *ResetCredits `json:"rate_limit_reset_credits,omitempty"`
+	Plan   string        `json:"plan_type"`
+	Limits *Limits       `json:"rate_limit"`
 }
 
 // This DTO intentionally cannot decode or expose access/refresh/id tokens,
@@ -175,6 +179,16 @@ func (s *Service) quota(ctx context.Context, a Account) (*Quota, error) {
 	if err = json.Unmarshal([]byte(raw), &q); err != nil {
 		return nil, errors.New("invalid provider quota")
 	}
+	if q.Resets == nil {
+		if raw, err := s.provider(ctx, a, "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits", "GET", nil); err == nil {
+			var credits struct {
+				Available *int `json:"available_count"`
+			}
+			if json.Unmarshal([]byte(raw), &credits) == nil && credits.Available != nil {
+				q.Resets = &ResetCredits{Available: *credits.Available}
+			}
+		}
+	}
 	return &q, nil
 }
 func (s *Service) Accounts(ctx context.Context) ([]Account, error) {
@@ -188,7 +202,7 @@ func (s *Service) Accounts(ctx context.Context) ([]Account, error) {
 		return nil, err
 	}
 	for i, a := range list {
-		if a.Provider == "codex" && !a.Disabled {
+		if a.Provider == "codex" {
 			q, e := s.quota(ctx, a)
 			list[i].Quota = q
 			list[i].QuotaError = e != nil
@@ -482,4 +496,57 @@ func (s *Service) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// ConsumeReset is a single, explicit redemption. The caller supplies a UUID so
+// retrying the same logical request cannot spend a second credit upstream.
+func (s *Service) ConsumeReset(ctx context.Context, id, requestID string) (string, error) {
+	if !validRequestID(requestID) {
+		return "", errors.New("valid redemption UUID required")
+	}
+	s.runMu.Lock()
+	defer s.runMu.Unlock()
+	a, err := s.find(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if a.Provider != "codex" {
+		return "", errors.New("Codex account required")
+	}
+	raw, err := s.provider(ctx, a, "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume", "POST", map[string]string{"redeem_request_id": requestID})
+	s.cacheMu.Lock()
+	s.cacheAt = time.Time{}
+	s.cacheMu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal([]byte(raw), &out) != nil {
+		return "", errors.New("reset response unrecognized; refresh before retrying")
+	}
+	switch out.Code {
+	case "reset", "already_redeemed":
+		return out.Code, nil
+	default:
+		return "", errors.New("reset not confirmed; refresh before retrying")
+	}
+}
+func validRequestID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i, c := range id {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+			continue
+		}
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }

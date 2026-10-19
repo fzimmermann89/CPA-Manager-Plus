@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Window start</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #fafafa;
+      --text: #222;
+      --muted: #656565;
+      --line: #ddd;
+      --accent: #246641;
+      --field: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181818;
+        --text: #eee;
+        --muted: #aaa;
+        --line: #383838;
+        --accent: #8cceaa;
+        --field: #222;
+      }
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font:
+        15px/1.5 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    header {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 auto 0 0;
+    }
+    button,
+    input {
+      font: inherit;
+      color: inherit;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--field);
+      padding: 8px 12px;
+    }
+    button {
+      cursor: pointer;
+    }
+    button:hover {
+      border-color: var(--muted);
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    #login {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: end;
+      max-width: 420px;
+      margin: 60px auto;
+    }
+    #login label {
+      display: grid;
+      gap: 6px;
+      flex: 1;
+    }
+    #login input {
+      width: 100%;
+      min-width: 140px;
+    }
+    #login button {
+      min-height: 40px;
+    }
+    #notice:empty {
+      display: none;
+    }
+    #notice {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    #notice.error {
+      color: #cf5147;
+    }
+    .row,
+    .labels {
+      display: grid;
+      grid-template-columns: minmax(140px, 1.2fr) 1fr 1fr 130px;
+      gap: 20px;
+      align-items: center;
+    }
+    .row {
+      padding: 20px 0;
+      border-top: 1px solid var(--line);
+    }
+    .labels {
+      color: var(--muted);
+      font-size: 13px;
+      padding-bottom: 8px;
+    }
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .name {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    input[type='checkbox'] {
+      width: 19px;
+      height: 19px;
+      margin: 0;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+    }
+    small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .quota {
+      font-variant-numeric: tabular-nums;
+    }
+    .quota b {
+      font-size: 17px;
+      font-weight: 500;
+    }
+    .track {
+      height: 3px;
+      background: var(--line);
+      margin: 6px 0;
+      max-width: 170px;
+    }
+    .fill {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .resets {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .resets button {
+      padding: 6px 9px;
+      font-size: 13px;
+      min-height: 36px;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 600px) {
+      main {
+        margin: 20px auto;
+        padding: 0 18px;
+      }
+      .labels {
+        display: none;
+      }
+      .row {
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .identity {
+        grid-column: 1/-1;
+      }
+      .resets {
+        grid-column: 1/-1;
+        justify-content: space-between;
+      }
+      .quota:before {
+        content: attr(data-label);
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      .track {
+        max-width: none;
+      }
+      header {
+        margin-bottom: 16px;
+      }
+      #login {
+        margin: 45px auto;
+      }
+    }</style
+  ><style>
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 24px 0;
+    }
+    .row {
+      grid-template-columns: 150px 1fr 100px;
+      align-items: start;
+    }
+    .times {
+      width: 100%;
+      margin: 8px 0;
+    }
+    .schedule-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    a {
+      color: var(--accent);
+    }
+    @media (max-width: 600px) {
+      .row {
+        grid-template-columns: 1fr auto;
+      }
+      .schedule {
+        grid-column: 1/-1;
+        grid-row: 2;
+      }
+      .name {
+        grid-column: 1;
+      }
+      .run {
+        grid-column: 2;
+        grid-row: 1;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <h1>Window start</h1>
+      <a href="/management.html">Admin</a>
+    </header>
+    <form id="login">
+      <label
+        >Admin key<input
+          id="password"
+          type="password"
+          autocomplete="current-password"
+          required /></label
+      ><button>Unlock</button>
+    </form>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <div id="content" hidden>
+      <div class="controls">
+        <label>Timezone <input id="timezone" value="Europe/Berlin" /></label
+        ><button id="save">Save</button>
+      </div>
+      <div id="accounts"></div>
+      <small
+        >Daily times · Luna / low. Active windows are skipped. Disabled accounts are never
+        started.</small
+      >
+    </div>
+  </main>
+  <script>
+    'use strict';
+    const q = (s) => document.querySelector(s);
+    let key = '',
+      accounts = [],
+      settings = { schedules: [], runs: {} };
+    function el(tag, text) {
+      const n = document.createElement(tag);
+      if (text !== undefined) n.textContent = text;
+      return n;
+    }
+    function notice(text = '', error = false) {
+      q('#notice').textContent = text;
+      q('#notice').classList.toggle('error', error);
+    }
+    async function api(path, method = 'GET', data) {
+      const r = await fetch('/activation/api/' + path, {
+        method,
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Bearer ' + key,
+          ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: data === undefined ? undefined : JSON.stringify(data),
+      });
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error || 'Request failed');
+      return d;
+    }
+    function render() {
+      const body = q('#accounts');
+      body.replaceChildren();
+      q('#timezone').value = settings.timezone;
+      for (const a of accounts.filter((a) => a.provider === 'codex')) {
+        const s = settings.schedules.find((s) => s.account_id === a.id),
+          row = el('div'),
+          name = el('div', a.email.split('@')[0] || a.provider),
+          cell = el('div'),
+          label = el('label'),
+          check = el('input'),
+          times = el('input'),
+          button = el('button', 'Start now');
+        row.className = 'row';
+        row.dataset.id = a.id;
+        name.className = 'name';
+        cell.className = 'schedule';
+        label.className = 'schedule-label';
+        check.type = 'checkbox';
+        check.checked = !!s?.enabled;
+        check.className = 'enabled';
+        check.setAttribute('aria-label', 'Schedule ' + name.textContent);
+        label.append(check, el('span', 'Scheduled'));
+        times.className = 'times';
+        times.value = (s?.times || []).join(', ');
+        times.placeholder = '05:00, 10:00, 15:00, 20:00';
+        times.setAttribute('aria-label', 'Daily start times for ' + name.textContent);
+        cell.append(label, times);
+        if (s?.next_run)
+          cell.append(el('small', 'Next ' + new Date(s.next_run * 1000).toLocaleString()));
+        if (settings.runs[a.id]) cell.append(el('small', settings.runs[a.id].result));
+        button.className = 'run';
+        button.disabled = a.disabled;
+        button.title = 'Start a five-hour window only if the current window has expired';
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            notice((await api('run', 'POST', { id: a.id })).result);
+            settings = await api('settings');
+            render();
+          } catch (e) {
+            notice(e.message, true);
+          } finally {
+            button.disabled = a.disabled;
+          }
+        };
+        if (a.disabled) name.append(el('small', 'Disabled'));
+        row.append(name, cell, button);
+        body.append(row);
+      }
+      if (!accounts.length) body.append(el('p', 'No accounts connected.'));
+    }
+    q('#login').onsubmit = async (e) => {
+      e.preventDefault();
+      key = q('#password').value;
+      q('#password').value = '';
+      try {
+        [accounts, settings] = await Promise.all([api('accounts'), api('settings')]);
+        render();
+        q('#login').hidden = true;
+        q('#content').hidden = false;
+        notice();
+      } catch (e) {
+        notice(e.message, true);
+      }
+    };
+    q('#save').onclick = async () => {
+      q('#save').disabled = true;
+      try {
+        settings = await api('settings', 'PUT', {
+          timezone: q('#timezone').value,
+          schedules: [...document.querySelectorAll('.row')].map((row) => ({
+            account_id: row.dataset.id,
+            enabled: row.querySelector('.enabled').checked,
+            times: row
+              .querySelector('.times')
+              .value.split(',')
+              .map((t) => t.trim())
+              .filter(Boolean),
+            model: 'gpt-6-luna',
+            effort: 'low',
+          })),
+          runs: {},
+        });
+        notice('Saved.');
+        render();
+      } catch (e) {
+        notice(e.message, true);
+      } finally {
+        q('#save').disabled = false;
+      }
+    };
+  </script>
+</html>

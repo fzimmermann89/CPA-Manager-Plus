@@ -1,27 +1,26 @@
 <!doctype html>
 <html lang="en">
-  <meta charset="utf-8" /><meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-  /><title>CPA accounts</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Accounts</title>
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #fafaf9;
-      --text: #202421;
-      --muted: #657067;
-      --line: #d8ded9;
-      --accent: #176848;
+      --bg: #fafafa;
+      --text: #222;
+      --muted: #656565;
+      --line: #ddd;
+      --accent: #246641;
       --field: #fff;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #151a17;
-        --text: #edf1ed;
-        --muted: #a3afa5;
-        --line: #38433b;
-        --accent: #8cdbaf;
-        --field: #202922;
+        --bg: #181818;
+        --text: #eee;
+        --muted: #aaa;
+        --line: #383838;
+        --accent: #8cceaa;
+        --field: #222;
       }
     }
     * {
@@ -36,519 +35,416 @@
         sans-serif;
     }
     main {
-      max-width: 1100px;
-      margin: auto;
-      padding: 28px 24px;
+      max-width: 900px;
+      margin: 32px auto;
+      padding: 0 24px;
     }
     header {
       display: flex;
+      gap: 12px;
       align-items: center;
-      gap: 18px;
-      border-bottom: 1px solid var(--line);
-      padding-bottom: 15px;
+      margin-bottom: 24px;
     }
     h1 {
-      font-size: 23px;
+      font-size: 20px;
       font-weight: 600;
       margin: 0 auto 0 0;
     }
     button,
-    input,
-    select {
+    input {
       font: inherit;
       color: inherit;
-      background: var(--field);
       border: 1px solid var(--line);
-      border-radius: 5px;
-      padding: 7px 10px;
+      border-radius: 4px;
+      background: var(--field);
+      padding: 8px 12px;
     }
     button {
       cursor: pointer;
+      white-space: nowrap;
     }
     button:hover {
-      border-color: var(--accent);
+      border-color: var(--muted);
     }
     button:disabled {
-      opacity: 0.5;
-      cursor: wait;
+      opacity: 0.45;
+      cursor: default;
     }
     :focus-visible {
       outline: 2px solid var(--accent);
-      outline-offset: 2px;
-    }
-    input[type='checkbox'] {
-      accent-color: var(--accent);
-      width: 18px;
-      height: 18px;
-    }
-    a {
-      color: var(--accent);
-    }
-    .muted,
-    small {
-      color: var(--muted);
-    }
-    #notice {
-      min-height: 26px;
-      margin: 15px 0;
-    }
-    #notice.error {
-      color: #bd493c;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-    th {
-      text-align: left;
-      font-weight: 500;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    td,
-    th {
-      padding: 16px 10px;
-      border-bottom: 1px solid var(--line);
-      vertical-align: top;
-    }
-    td:first-child,
-    th:first-child {
-      padding-left: 0;
-    }
-    td:last-child,
-    th:last-child {
-      padding-right: 0;
-    }
-    td small {
-      display: block;
-    }
-    meter {
-      display: block;
-      width: 130px;
-      height: 8px;
-      margin-top: 6px;
-    }
-    label {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-    }
-    #summary {
-      padding: 18px 0;
-      display: flex;
-      gap: 26px;
-      flex-wrap: wrap;
-    }
-    .controls {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin: 20px 0;
-    }
-    .times {
-      width: 240px;
-      max-width: 100%;
-    }
-    .account {
-      overflow-wrap: anywhere;
-    }
-    .wrap {
-      overflow-x: auto;
+      outline-offset: 3px;
     }
     #login {
-      margin-top: 25px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: end;
+      max-width: 420px;
+      margin: 60px auto;
+    }
+    #login label {
+      display: grid;
+      gap: 6px;
+      flex: 1;
     }
     #login input {
-      max-width: 65vw;
+      width: 100%;
+      min-width: 140px;
     }
-    footer {
-      margin-top: 24px;
-      font-size: 13px;
+    #login button {
+      min-height: 40px;
+    }
+    #notice:empty {
+      display: none;
+    }
+    #notice {
       color: var(--muted);
+      font-size: 14px;
+    }
+    #notice.error {
+      color: #cf5147;
+    }
+    .row,
+    .labels {
+      display: grid;
+      grid-template-columns: minmax(140px, 1.2fr) 1fr 1fr 130px;
+      gap: 20px;
+      align-items: center;
+    }
+    .row {
+      padding: 20px 0;
+      border-top: 1px solid var(--line);
+    }
+    .labels {
+      color: var(--muted);
+      font-size: 13px;
+      padding-bottom: 8px;
+    }
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .name {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+    input[type='checkbox'] {
+      width: 19px;
+      height: 19px;
+      margin: 0;
+      accent-color: var(--accent);
+      flex-shrink: 0;
+    }
+    small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .quota {
+      font-variant-numeric: tabular-nums;
+    }
+    .quota b {
+      font-size: 17px;
+      font-weight: 500;
+    }
+    .track {
+      height: 3px;
+      background: var(--line);
+      margin: 6px 0;
+      max-width: 170px;
+    }
+    .fill {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+    }
+    .resets {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .resets button {
+      padding: 6px 9px;
+      font-size: 13px;
+      min-height: 36px;
     }
     [hidden] {
       display: none !important;
     }
-    @media (max-width: 650px) {
+    @media (max-width: 600px) {
       main {
-        padding: 18px 14px;
+        margin: 20px auto;
+        padding: 0 18px;
       }
-      td,
-      th {
-        padding: 13px 7px;
-      }
-      .account {
-        min-width: 170px;
-      }
-      meter {
-        width: 90px;
-      }
-      header {
-        gap: 10px;
-      }
-      h1 {
-        font-size: 20px;
-      }
-      .times {
-        width: 185px;
-      }
-    }
-    @media (max-width: 650px) {
-      .wrap {
-        overflow: visible;
-      }
-      table,
-      tbody {
-        display: block;
-      }
-      thead {
+      .labels {
         display: none;
       }
-      tbody tr {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 16px 12px;
-        border-bottom: 1px solid var(--line);
-        padding: 18px 0;
+      .row {
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
       }
-      td {
-        padding: 0 !important;
-        border: 0;
-        min-width: 0;
-      }
-      td:first-child {
-        grid-column: 1/3;
-        grid-row: 1;
-        min-width: 0;
-      }
-      td:nth-child(5) {
-        grid-column: 3;
-        grid-row: 1;
-        text-align: right;
-      }
-      td:nth-child(2) {
-        grid-column: 1;
-        grid-row: 2;
-      }
-      td:nth-child(3) {
-        grid-column: 2;
-        grid-row: 2;
-      }
-      td:nth-child(4) {
-        grid-column: 3;
-        grid-row: 2;
-      }
-      td:nth-child(6) {
+      .identity {
         grid-column: 1/-1;
-        grid-row: 3;
       }
-      td:nth-child(2)::before,
-      td:nth-child(3)::before,
-      td:nth-child(4)::before {
+      .resets {
+        grid-column: 1/-1;
+        justify-content: space-between;
+      }
+      .quota:before {
+        content: attr(data-label);
         display: block;
         color: var(--muted);
         font-size: 12px;
         margin-bottom: 4px;
       }
-      td:nth-child(2)::before {
-        content: '5-hour remaining';
+      .track {
+        max-width: none;
       }
-      td:nth-child(3)::before {
-        content: 'Weekly remaining';
+      header {
+        margin-bottom: 16px;
       }
-      td:nth-child(4)::before {
-        content: 'Requests';
+      header h1 {
+        font-size: 18px;
       }
-      meter {
-        width: 100%;
-      }
-      .times {
-        width: 100%;
-        margin: 8px 0;
-      }
-      #summary {
+      header button {
         font-size: 14px;
+        padding: 8px;
       }
-      .account strong {
-        font-size: 14px;
+      .resets > span::after {
+        content: ' banked resets';
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #login {
+        margin: 45px auto;
       }
     }
   </style>
   <main>
     <header>
-      <h1 id="title">CPA accounts</h1>
-      <button id="refresh" title="Refresh accounts and cached quota readings">Refresh</button
-      ><a id="manager" href="/management.html" hidden>Manager</a>
+      <h1 id="title">Accounts</h1>
+      <button id="refresh" hidden>Refresh</button><button id="logout" hidden>Log out</button>
     </header>
     <form id="login" hidden>
       <label
-        >Admin key <input id="key" type="password" autocomplete="current-password" required
-      /></label>
-      <button>Unlock</button>
+        >Password<input
+          id="password"
+          type="password"
+          autocomplete="current-password"
+          required /></label
+      ><button>Unlock</button>
     </form>
     <p id="notice" role="status" aria-live="polite"></p>
-    <div id="summary"></div>
-    <div id="admin-controls" class="controls" hidden>
-      <label
-        >Timezone
-        <input id="timezone" value="Europe/Berlin" aria-label="Schedule timezone" /></label
-      ><button id="save">Save schedules</button
-      ><span class="muted">Luna · low reasoning · “OK?”</span>
-    </div>
-    <div class="wrap">
-      <table>
-        <thead>
-          <tr id="head">
-            <th>Account</th>
-            <th>5-hour remaining</th>
-            <th>Weekly remaining</th>
-            <th>Requests</th>
-            <th>Enabled</th>
-          </tr>
-        </thead>
-        <tbody id="accounts"></tbody>
-      </table>
-    </div>
-    <footer id="footer">
-      Usage readings are cached for 30 seconds. Only account on/off controls are available here.
-      Credentials and configuration require the private Tailscale admin UI.
-    </footer>
+    <section id="content" aria-label="Accounts" hidden>
+      <div class="labels" aria-hidden="true">
+        <span>Account</span><span>5-hour remaining</span><span>Weekly remaining</span
+        ><span>Banked resets</span>
+      </div>
+      <div id="accounts"></div>
+    </section>
   </main>
   <script>
     'use strict';
-    const admin = location.pathname.startsWith('/activation/'),
-      base = admin ? '/activation' : location.pathname.replace(/\/$/, ''),
-      q = (s) => document.querySelector(s);
-    let key = '',
-      accounts = [],
-      settings = { timezone: 'Europe/Berlin', schedules: [], runs: {} };
-    function node(tag, text) {
+    const q = (s) => document.querySelector(s),
+      base = location.pathname.replace(/\/$/, ''),
+      pending = new Map();
+    q('#title').textContent = base.endsWith('/job') ? 'Job accounts' : 'Private accounts';
+    function el(tag, text) {
       const n = document.createElement(tag);
       if (text !== undefined) n.textContent = text;
       return n;
     }
-    function notice(t, error = false) {
-      q('#notice').textContent = t;
+    function notice(text = '', error = false) {
+      q('#notice').textContent = text;
       q('#notice').classList.toggle('error', error);
     }
+    function unlocked(ok) {
+      q('#login').hidden = ok;
+      q('#content').hidden = !ok;
+      q('#refresh').hidden = !ok;
+      q('#logout').hidden = !ok;
+    }
     async function api(path, method = 'GET', data) {
-      const headers = {};
-      if (admin) headers.Authorization = 'Bearer ' + key;
-      if (data !== undefined) headers['Content-Type'] = 'application/json';
       const r = await fetch(base + path, {
         method,
-        headers,
-        body: data === undefined ? undefined : JSON.stringify(data),
         credentials: 'same-origin',
         cache: 'no-store',
+        headers: data === undefined ? {} : { 'Content-Type': 'application/json' },
+        body: data === undefined ? undefined : JSON.stringify(data),
       });
-      const d = await r.json();
-      if (!r.ok) throw Error(d.error || 'Request failed');
-      return d;
-    }
-    function windowCell(w) {
-      const td = node('td');
-      if (!w) {
-        td.textContent = '—';
-        return td;
+      const value = await r.json();
+      if (!r.ok) {
+        if (r.status === 401) unlocked(false);
+        throw Error(value.error || 'Request failed');
       }
-      const left = Math.max(0, 100 - w.used_percent);
-      td.append(node('span', `${Math.round(left)}%`));
-      if (w.reset_at)
-        td.append(
-          node(
+      return value;
+    }
+    function quota(w, label) {
+      const cell = el('div');
+      cell.className = 'quota';
+      cell.dataset.label = label;
+      if (!w) {
+        cell.append(el('b', '—'), el('small', 'Unavailable'));
+        return cell;
+      }
+      const left = Math.max(0, Math.min(100, 100 - w.used_percent));
+      cell.append(el('b', Math.round(left) + '%'));
+      const track = el('div'),
+        fill = el('span');
+      track.className = 'track';
+      fill.className = 'fill';
+      fill.style.width = left + '%';
+      track.append(fill);
+      cell.append(track);
+      cell.setAttribute('aria-label', label + ': ' + Math.round(left) + '%');
+      if (w.reset_at) {
+        const reset = new Date(w.reset_at * 1000);
+        cell.append(
+          el(
             'small',
-            'Resets ' +
-              new Date(w.reset_at * 1000).toLocaleString([], {
-                weekday: 'short',
-                hour: '2-digit',
-                minute: '2-digit',
-              })
+            reset > Date.now()
+              ? 'Resets ' +
+                  reset.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })
+              : 'Window available'
           )
         );
-      const m = node('meter');
-      m.min = 0;
-      m.max = 100;
-      m.value = left;
-      m.setAttribute('aria-label', 'Remaining allowance');
-      td.append(m);
-      return td;
+      }
+      return cell;
     }
-    function render() {
+    function limit(a, seconds) {
+      return Object.values(a.quota?.rate_limit || {}).find(
+        (w) => w?.limit_window_seconds === seconds
+      );
+    }
+    function render(accounts) {
       const body = q('#accounts');
       body.replaceChildren();
-      let success = 0,
-        failed = 0;
       for (const a of accounts) {
-        success += a.success || 0;
-        failed += a.failed || 0;
-        const tr = node('tr'),
-          name = node('td');
-        name.className = 'account';
-        name.append(node('strong', a.email || a.id), node('small', a.provider + ' · ' + a.status));
-        if (a.quota_error) name.append(node('small', 'Quota unavailable'));
-        tr.append(
-          name,
-          windowCell(a.quota?.rate_limit?.primary_window),
-          windowCell(a.quota?.rate_limit?.secondary_window),
-          node('td', `${a.success || 0} ok / ${a.failed || 0} failed`)
+        const row = el('div'),
+          identity = el('div'),
+          name = el('span'),
+          toggle = el('input');
+        row.className = 'row';
+        identity.className = 'identity';
+        name.className = 'name';
+        name.textContent = a.email || a.provider;
+        toggle.type = 'checkbox';
+        toggle.checked = !a.disabled;
+        toggle.title = 'Enable or disable ' + name.textContent;
+        toggle.setAttribute('aria-label', 'Enable ' + name.textContent);
+        toggle.onchange = async () => {
+          toggle.disabled = true;
+          try {
+            await api('/api/account/status', 'POST', { id: a.id, disabled: !toggle.checked });
+            await load();
+          } catch (e) {
+            toggle.checked = !toggle.checked;
+            notice(e.message, true);
+          } finally {
+            toggle.disabled = false;
+          }
+        };
+        identity.append(toggle, name);
+        if (a.disabled) name.append(el('small', 'Disabled'));
+        else if (a.quota_error) name.append(el('small', 'Quota unavailable'));
+        row.append(
+          identity,
+          quota(limit(a, 18000), '5-hour remaining'),
+          quota(limit(a, 604800), 'Weekly remaining')
         );
-        const state = node('td');
-        if (!admin) {
-          const label = node('label'),
-            check = node('input');
-          check.type = 'checkbox';
-          check.checked = !a.disabled;
-          check.setAttribute('aria-label', 'Enable ' + (a.email || a.id));
-          check.onchange = async () => {
-            check.disabled = true;
-            try {
-              await api('/api/account/status', 'POST', { id: a.id, disabled: !check.checked });
-              notice('Account updated');
-              await load();
-            } catch (e) {
-              check.checked = !check.checked;
-              notice(e.message, true);
-            } finally {
-              check.disabled = false;
-            }
-          };
-          label.append(check, node('span', a.disabled ? 'Off' : 'On'));
-          state.append(label);
-        } else state.textContent = a.disabled ? 'Off' : 'On';
-        tr.append(state);
-        if (admin) {
-          const schedule = settings.schedules.find((s) => s.account_id === a.id),
-            cell = node('td'),
-            enabled = node('input'),
-            times = node('input');
-          enabled.type = 'checkbox';
-          enabled.checked = !!schedule?.enabled;
-          enabled.dataset.id = a.id;
-          enabled.className = 'schedule';
-          enabled.setAttribute('aria-label', 'Schedule ' + (a.email || a.id));
-          times.className = 'times';
-          times.value = (schedule?.times || []).join(', ');
-          times.placeholder = '05:00, 10:00, 15:00, 20:00';
-          times.setAttribute('aria-label', 'Daily activation times for ' + (a.email || a.id));
-          times.dataset.id = a.id;
-          const label = node('label');
-          label.append(enabled, node('span', 'Scheduled'));
-          cell.append(label, node('br'), times);
-          if (schedule?.next_run)
-            cell.append(
-              node('small', 'Next ' + new Date(schedule.next_run * 1000).toLocaleString())
-            );
-          const run = settings.runs[a.id];
-          if (run)
-            cell.append(
-              node('small', new Date(run.at * 1000).toLocaleString() + ' · ' + run.result)
-            );
-          const button = node('button', 'Run now');
-          button.title =
-            'Check the current window and send a minimal request only when it has expired';
-          button.disabled = a.disabled || a.provider !== 'codex';
-          button.onclick = async () => {
-            button.disabled = true;
-            try {
-              const r = await api('/api/run', 'POST', { id: a.id });
-              notice(r.result);
-              settings = await api('/api/settings');
-              render();
-            } catch (e) {
-              notice(e.message, true);
-            } finally {
-              button.disabled = false;
-            }
-          };
-          cell.append(node('br'), button);
-          tr.append(cell);
-        }
-        body.append(tr);
-      }
-      if (!accounts.length) {
-        const td = node(
-          'td',
-          'No accounts connected. Add accounts from the private management UI.'
+        const resets = el('div'),
+          count = a.quota?.rate_limit_reset_credits?.available_count;
+        resets.className = 'resets';
+        const text = el('span', count === undefined ? '—' : String(count));
+        text.title = 'Available banked resets';
+        text.setAttribute(
+          'aria-label',
+          count === undefined ? 'Banked resets unavailable' : count + ' banked resets'
         );
-        td.colSpan = admin ? 6 : 5;
-        const tr = node('tr');
-        tr.append(td);
-        body.append(tr);
+        const use = el('button', 'Use reset');
+        use.disabled = !(count > 0);
+        use.title = 'Spend one banked reset for ' + name.textContent;
+        use.onclick = async () => {
+          if (!confirm('Use one banked reset for ' + (a.email || a.provider) + '?')) return;
+          use.disabled = true;
+          let requestID = pending.get(a.id) || sessionStorage.getItem('reset:' + base + ':' + a.id);
+          if (!requestID) {
+            requestID = crypto.randomUUID();
+            sessionStorage.setItem('reset:' + base + ':' + a.id, requestID);
+          }
+          pending.set(a.id, requestID);
+          try {
+            const result = await api('/api/account/reset', 'POST', {
+              id: a.id,
+              request_id: requestID,
+            });
+            pending.delete(a.id);
+            sessionStorage.removeItem('reset:' + base + ':' + a.id);
+            notice(
+              result.result === 'already_redeemed' ? 'Reset already applied.' : 'Reset applied.'
+            );
+            await load();
+          } catch (e) {
+            notice(
+              e.message + ' Refresh before retrying; the same redemption ID will be reused.',
+              true
+            );
+          } finally {
+            use.disabled = false;
+          }
+        };
+        resets.append(text, use);
+        row.append(resets);
+        body.append(row);
       }
-      q('#summary').textContent =
-        `${accounts.length} accounts · ${accounts.filter((a) => !a.disabled).length} enabled · ${success} successful / ${failed} failed requests`;
+      if (!accounts.length) body.append(el('p', 'No accounts connected.'));
     }
     async function load() {
       q('#refresh').disabled = true;
       try {
-        accounts = await api('/api/accounts');
-        if (admin) {
-          settings = await api('/api/settings');
-          q('#timezone').value = settings.timezone;
-        }
-        render();
+        render(await api('/api/accounts'));
+        unlocked(true);
         return true;
       } catch (e) {
-        notice(e.message, true);
+        if (e.message !== 'Password required') notice(e.message, true);
         return false;
       } finally {
         q('#refresh').disabled = false;
       }
     }
-    q('#refresh').onclick = load;
-    q('#login').onsubmit = (e) => {
+    q('#login').onsubmit = async (e) => {
       e.preventDefault();
-      key = q('#key').value;
-      q('#key').value = '';
-      load().then((ok) => {
-        if (ok) {
-          q('#login').hidden = true;
-          q('#admin-controls').hidden = false;
-        }
-      });
-    };
-    q('#save').onclick = async () => {
-      q('#save').disabled = true;
+      const button = q('#login button');
+      button.disabled = true;
+      notice();
       try {
-        const schedules = accounts
-          .filter((a) => a.provider === 'codex')
-          .map((a) => ({
-            account_id: a.id,
-            enabled:
-              [...document.querySelectorAll('.schedule')].find((n) => n.dataset.id === a.id)
-                ?.checked || false,
-            times: (
-              [...document.querySelectorAll('.times')].find((n) => n.dataset.id === a.id)?.value ||
-              ''
-            )
-              .split(',')
-              .map((t) => t.trim())
-              .filter(Boolean),
-            model: 'gpt-6-luna',
-            effort: 'low',
-          }));
-        settings = await api('/api/settings', 'PUT', {
-          timezone: q('#timezone').value,
-          schedules,
-          runs: {},
-        });
-        notice('Schedules saved');
-        render();
+        await api('/api/login', 'POST', { password: q('#password').value });
+        q('#password').value = '';
+        await load();
       } catch (e) {
         notice(e.message, true);
       } finally {
-        q('#save').disabled = false;
+        button.disabled = false;
       }
     };
-    if (admin) {
-      q('#title').textContent = 'Window activation';
-      q('#manager').hidden = false;
-      q('#login').hidden = false;
-      q('#head').append(node('th', 'Daily activation'));
-      q('#footer').textContent =
-        'Schedule changes and Run now require this private admin listener. Times are local to the configured timezone. Active windows are skipped; imminent resets wait up to ten minutes. Disabled accounts are never activated. No catch-up requests after downtime.';
-    } else load();
+    q('#refresh').onclick = () => {
+      notice();
+      load();
+    };
+    q('#logout').onclick = async () => {
+      try {
+        await api('/api/logout', 'POST', {});
+        q('#accounts').replaceChildren();
+        unlocked(false);
+        notice();
+      } catch (e) {
+        notice(e.message, true);
+      }
+    };
+    load();
   </script>
 </html>

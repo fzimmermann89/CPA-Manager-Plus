@@ -35,7 +35,7 @@ func (s *Service) HubHandler() http.Handler {
 			}
 			out := make([]map[string]any, 0, len(list))
 			for _, a := range list {
-				out = append(out, map[string]any{"id": a.ID, "auth_index": a.Index, "provider": a.Provider, "email": a.Email, "disabled": a.Disabled, "id_token": map[string]string{"chatgpt_account_id": a.Identity.AccountID}})
+				out = append(out, map[string]any{"id": publicID(a.ID), "auth_index": a.Index, "provider": a.Provider, "email": strings.SplitN(a.Email, "@", 2)[0], "disabled": a.Disabled, "id_token": map[string]string{"chatgpt_account_id": a.Identity.AccountID}})
 			}
 			reply(w, 200, map[string]any{"files": out})
 			return

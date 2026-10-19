@@ -129,7 +129,7 @@ func TestPublicBoundary(t *testing.T) {
 	h := s.PublicHandler("public-password")
 	for _, path := range []string{"/management.html", "/setup", "/activation/api/settings", "/v0/management/config", "/v0/management/auth-files/download", "/v0/management/api-keys", "/%2e%2e/activation/api/settings", "/api/account/status/../config"} {
 		req := httptest.NewRequest("GET", path, nil)
-		req.SetBasicAuth("operator", "public-password")
+		req.Header.Set("Authorization", "Bearer public-password")
 		req.Header.Set("X-Forwarded-For", "100.1.2.3")
 		req.Header.Set("Tailscale-User-Login", "admin")
 		w := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestPublicBoundary(t *testing.T) {
 	if w.Code != 401 {
 		t.Fatal(w.Code)
 	}
-	req.SetBasicAuth("operator", "public-password")
+	req.Header.Set("Authorization", "Bearer public-password")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != 200 || strings.Contains(w.Body.String(), "LEAK-ME") || strings.Contains(w.Body.String(), "id_token") || strings.Contains(w.Body.String(), "auth_index") || strings.Contains(w.Body.String(), "/private/auth") {
@@ -152,7 +152,7 @@ func TestPublicBoundary(t *testing.T) {
 	}
 	for _, body := range []string{`{"id":"a","disabled":true,"access_token":"x"}`, `{"id":"a"}`} {
 		req = httptest.NewRequest("POST", "/api/account/status", strings.NewReader(body))
-		req.SetBasicAuth("operator", "public-password")
+		req.Header.Set("Authorization", "Bearer public-password")
 		req.Header.Set("Content-Type", "application/json")
 		w = httptest.NewRecorder()
 		h.ServeHTTP(w, req)
@@ -160,8 +160,8 @@ func TestPublicBoundary(t *testing.T) {
 			t.Fatal(w.Code)
 		}
 	}
-	req = httptest.NewRequest("POST", "/api/account/status", strings.NewReader(`{"id":"a","disabled":true}`))
-	req.SetBasicAuth("operator", "public-password")
+	req = httptest.NewRequest("POST", "/api/account/status", strings.NewReader(`{"id":"`+publicID("a")+`","disabled":true}`))
+	req.Header.Set("Authorization", "Bearer public-password")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "https://attacker.test")
 	w = httptest.NewRecorder()
@@ -180,7 +180,7 @@ func TestAdminAndHubRestrictions(t *testing.T) {
 	s, _ := mockService(t)
 	h := s.AdminHandler(func(_ context.Context, h string) (bool, error) { return h == "Bearer admin-secret", nil })
 	req := httptest.NewRequest("PUT", "/activation/api/settings", strings.NewReader(`{}`))
-	req.SetBasicAuth("operator", "public-password")
+	req.Header.Set("Authorization", "Bearer public-password")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -210,5 +210,103 @@ func TestSpringForwardSlotIsSkipped(t *testing.T) {
 	now := time.Date(2026, 3, 29, 3, 1, 0, 0, loc)
 	if _, _, ok := latestSlot(now, []string{"02:00"}); ok {
 		t.Fatal("nonexistent spring-forward time was executed")
+	}
+}
+
+func TestPasswordOnlySessionAndIdentity(t *testing.T) {
+	s, _ := mockService(t)
+	h := s.PublicHandler("public-password")
+	// The login shell contains no accounts and needs no Basic-auth browser prompt.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+	if w.Code != 200 || w.Header().Get("WWW-Authenticate") != "" {
+		t.Fatal("login shell", w.Code)
+	}
+	req := httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"password":"public-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 || len(w.Result().Cookies()) != 1 {
+		t.Fatal("login failed", w.Code)
+	}
+	cookie := w.Result().Cookies()[0]
+	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatal("unsafe session cookie")
+	}
+	req = httptest.NewRequest("GET", "/api/accounts", nil)
+	req.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 || strings.Contains(w.Body.String(), "@") || strings.Contains(w.Body.String(), "a.json") || !strings.Contains(w.Body.String(), `"email":"a"`) {
+		t.Fatal("identity not redacted", w.Code, w.Body.String())
+	}
+	var list []map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &list)
+	if list[0]["id"] != publicID("a") {
+		t.Fatal("unredacted account id")
+	}
+	if validSession("public-password", sessionToken("public-password", time.Now().Add(-time.Minute).Unix())) || validSession("different-password", cookie.Value) || validSession("public-password", cookie.Value+"x") {
+		t.Fatal("invalid session accepted")
+	}
+	req = httptest.NewRequest("POST", "/api/login", strings.NewReader(`{"password":"public-password"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.test")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatal("login CSRF allowed")
+	}
+}
+func TestBankedResetUsesOnlySelectedAccountAndUUID(t *testing.T) {
+	calls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v0/management/auth-files" {
+			_, _ = w.Write([]byte(`{"files":[{"id":"a","name":"a.json","auth_index":"index-a","provider":"codex"}]}`))
+			return
+		}
+		if r.URL.Path != "/v0/management/api-call" {
+			t.Error("unexpected path", r.URL.Path)
+			return
+		}
+		var v struct {
+			Index  string            `json:"auth_index"`
+			URL    string            `json:"url"`
+			Method string            `json:"method"`
+			Data   string            `json:"data"`
+			Header map[string]string `json:"header"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&v)
+		if v.Index != "index-a" || v.Method != "POST" || v.URL != "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume" || v.Header["Authorization"] != "Bearer $TOKEN$" {
+			t.Fatal("wrong redemption target")
+		}
+		if v.Data != `{"redeem_request_id":"12345678-1234-1234-1234-123456789abc"}` {
+			t.Error("wrong redemption payload", v.Data)
+		}
+		calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{"status_code": 200, "body": `{"code":"reset"}`})
+	}))
+	defer upstream.Close()
+	s, e := New(func(context.Context) (Connection, error) { return Connection{URL: upstream.URL, Key: "secret"}, nil }, filepath.Join(t.TempDir(), "settings.json"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	h := s.PublicHandler("public-password")
+	for _, body := range []string{`{"id":"` + publicID("a") + `","request_id":"invalid"}`, `{"id":"` + publicID("a") + `","request_id":"12345678-1234-1234-1234-123456789abc","url":"https://evil.test"}`} {
+		req := httptest.NewRequest("POST", "/api/account/reset", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer public-password")
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 400 {
+			t.Fatal("unsafe reset allowed", w.Code)
+		}
+	}
+	req := httptest.NewRequest("POST", "/api/account/reset", strings.NewReader(`{"id":"`+publicID("a")+`","request_id":"12345678-1234-1234-1234-123456789abc"}`))
+	req.Header.Set("Authorization", "Bearer public-password")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 200 || calls != 1 {
+		t.Fatal("reset failed", w.Code, calls)
 	}
 }

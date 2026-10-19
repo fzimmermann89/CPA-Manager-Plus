@@ -6,13 +6,18 @@ import (
 	"crypto/subtle"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 //go:embed panel.html
 var panel []byte
+
+//go:embed activation.html
+var activationPanel []byte
 
 type VerifyAdmin func(context.Context, string) (bool, error)
 
@@ -50,10 +55,23 @@ func jsonBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	return true
 }
-func publicAccounts(list []Account) []map[string]any {
+func publicID(id string) string {
+	h := sha256.Sum256([]byte("operator-account:" + id))
+	return fmt.Sprintf("%x", h[:16])
+}
+func publicAccounts(list []Account) []map[string]any { return accountViews(list, false) }
+func accountViews(list []Account, private bool) []map[string]any {
 	out := make([]map[string]any, 0, len(list))
 	for _, a := range list {
-		out = append(out, map[string]any{"id": a.ID, "provider": a.Provider, "email": a.Email, "disabled": a.Disabled, "status": a.Status, "success": a.Success, "failed": a.Failed, "quota": a.Quota, "quota_error": a.QuotaError})
+		id, name := a.ID, a.Email
+		if !private {
+			id = publicID(a.ID)
+			name = strings.SplitN(a.Email, "@", 2)[0]
+			if name == "" {
+				name = a.Provider
+			}
+		}
+		out = append(out, map[string]any{"id": id, "provider": a.Provider, "email": name, "disabled": a.Disabled, "status": a.Status, "success": a.Success, "failed": a.Failed, "quota": a.Quota, "quota_error": a.QuotaError})
 	}
 	return out
 }
@@ -68,17 +86,48 @@ func (s *Service) PublicHandler(password string) http.Handler {
 			s.HubHandler().ServeHTTP(w, r)
 			return
 		}
-		user, pass, ok := r.BasicAuth()
-		got := sha256.Sum256([]byte(pass))
-		if password == "" || !ok || user != "operator" || subtle.ConstantTimeCompare(want[:], got[:]) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="CPA operator", charset="UTF-8"`)
-			reply(w, 401, map[string]string{"error": "operator password required"})
+		if r.URL.Path == "/" && r.Method == "GET" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(panel)
+			return
+		}
+		if r.URL.Path == "/api/login" && r.Method == "POST" {
+			var v struct {
+				Password string `json:"password"`
+			}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			got := sha256.Sum256([]byte(v.Password))
+			if password == "" || subtle.ConstantTimeCompare(want[:], got[:]) != 1 {
+				time.Sleep(500 * time.Millisecond)
+				reply(w, 401, map[string]string{"error": "Incorrect password"})
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "cpa_operator", Value: sessionToken(password, time.Now().Add(12*time.Hour).Unix()), Path: "/", MaxAge: 43200, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+			reply(w, 200, map[string]bool{"ok": true})
+			return
+		}
+		if r.URL.Path == "/api/logout" && r.Method == "POST" {
+			var v struct{}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			http.SetCookie(w, &http.Cookie{Name: "cpa_operator", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+			reply(w, 200, map[string]bool{"ok": true})
+			return
+		}
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		got := sha256.Sum256([]byte(token))
+		authorized := password != "" && strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") && subtle.ConstantTimeCompare(want[:], got[:]) == 1
+		if cookie, err := r.Cookie("cpa_operator"); err == nil {
+			authorized = authorized || validSession(password, cookie.Value)
+		}
+		if !authorized {
+			reply(w, 401, map[string]string{"error": "Password required"})
 			return
 		}
 		switch {
-		case r.URL.Path == "/" && r.Method == "GET":
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(panel)
 		case r.URL.Path == "/api/accounts" && r.Method == "GET":
 			list, e := s.Accounts(r.Context())
 			if e != nil {
@@ -98,11 +147,39 @@ func (s *Service) PublicHandler(password string) http.Handler {
 				reply(w, 400, map[string]string{"error": "account and disabled required"})
 				return
 			}
-			if e := s.Toggle(r.Context(), v.ID, *v.Disabled); e != nil {
+			id, e := s.resolvePublicID(r.Context(), v.ID)
+			if e != nil {
+				reply(w, 404, map[string]string{"error": "account not found"})
+				return
+			}
+			if e := s.Toggle(r.Context(), id, *v.Disabled); e != nil {
 				reply(w, 502, map[string]string{"error": e.Error()})
 				return
 			}
 			reply(w, 200, map[string]bool{"ok": true})
+		case r.URL.Path == "/api/account/reset" && r.Method == "POST":
+			var v struct {
+				ID        string `json:"id"`
+				RequestID string `json:"request_id"`
+			}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			if !validRequestID(v.RequestID) {
+				reply(w, 400, map[string]string{"error": "valid redemption UUID required"})
+				return
+			}
+			id, e := s.resolvePublicID(r.Context(), v.ID)
+			if e != nil {
+				reply(w, 404, map[string]string{"error": "account not found"})
+				return
+			}
+			result, e := s.ConsumeReset(r.Context(), id, v.RequestID)
+			if e != nil {
+				reply(w, 502, map[string]string{"error": e.Error()})
+				return
+			}
+			reply(w, 200, map[string]string{"result": result})
 		default:
 			http.NotFound(w, r)
 		}
@@ -113,7 +190,7 @@ func (s *Service) AdminHandler(verify VerifyAdmin) http.Handler {
 		headers(w)
 		if r.URL.Path == "/activation/" && r.Method == "GET" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(panel)
+			_, _ = w.Write(activationPanel)
 			return
 		}
 		ok, e := verify(r.Context(), r.Header.Get("Authorization"))
@@ -129,7 +206,7 @@ func (s *Service) AdminHandler(verify VerifyAdmin) http.Handler {
 				reply(w, 502, map[string]string{"error": e.Error()})
 				return
 			}
-			reply(w, 200, publicAccounts(a))
+			reply(w, 200, accountViews(a, true))
 		case path == "/api/settings" && r.Method == "GET":
 			reply(w, 200, s.Settings())
 		case path == "/api/settings" && r.Method == "PUT":
