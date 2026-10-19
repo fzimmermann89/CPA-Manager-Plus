@@ -2,6 +2,8 @@
 # Ingress and the trusted Manager share Runtime's network namespace.
 # Only Ingress binds a non-loopback listener; CPA, Manager and control stay loopback-only.
 # The only published endpoint is a host-loopback Ingress port.
+# Explicit `docker compose restart cpamp-runtime` must restart both namespace
+# consumers as well; container-engine/direct Docker restarts are NOT covered.
 services:
   cpamp-runtime:
     platform: linux/amd64
@@ -48,7 +50,9 @@ services:
       - cpamp-proof-manager-data:/data
       - cpamp-proof-runtime-secret:/run/cpamp/runtime-secret:ro
     depends_on:
-      - cpamp-runtime
+      cpamp-runtime:
+        condition: service_started
+        restart: true
 
   cpamp-ingress:
     platform: linux/amd64
@@ -66,8 +70,11 @@ services:
       CPAMP_GATEWAY_URL: 'http://127.0.0.1:8317'
       CPAMP_INGRESS_CONTROL_ADDR: '127.0.0.1:9082'
     depends_on:
-      - cpamp-runtime
-      - cpamp-manager
+      cpamp-runtime:
+        condition: service_started
+        restart: true
+      cpamp-manager:
+        condition: service_started
 
 volumes:
   cpamp-proof-manager-data:
