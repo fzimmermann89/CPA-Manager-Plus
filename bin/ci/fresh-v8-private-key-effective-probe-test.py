@@ -2,6 +2,7 @@
 """Scoped offline regressions; no Docker, network or real credentials."""
 
 import contextlib
+import copy
 import importlib.util
 import io
 import json
@@ -87,11 +88,44 @@ class ProbeTests(unittest.TestCase):
                                                    "_latest_secret": "synthetic"})
 
     def test_uncertain_write_has_no_retry_or_rollback(self):
-        with patch.object(probe, "request", side_effect=probe.StopProof("uncertain")) as call, \
+        with patch.object(probe, "request", side_effect=[(200, b"[]"), probe.StopProof("uncertain")]) as call, \
                 self.assertRaises(probe.StopProof):
-            probe.set_only_client_keys(8317, "private", ["synthetic"], "install",
+            probe.set_only_client_keys(8317, "private", ["synthetic"], [], "install",
+                                       {"events": [], "_started": 0})
+        self.assertEqual(call.call_count, 2)
+
+    def test_foreign_key_change_prevents_write(self):
+        with patch.object(probe, "request", return_value=(200, b'["foreign"]')) as call, \
+                self.assertRaisesRegex(probe.StopProof, "ownership changed"):
+            probe.set_only_client_keys(8317, "private", ["synthetic"], [], "install",
                                        {"events": [], "_started": 0})
         self.assertEqual(call.call_count, 1)
+
+    def test_unsafe_config_is_rejected_before_writes(self):
+        cfg = {"config-version": 8, "server": {"host": "127.0.0.1", "port": 8317},
+               "management": {"allow-remote": False, "secret-key": "hashed-synthetic",
+                              "disable-control-panel": True, "disable-auto-update-panel": True},
+               "access": {"api-keys": []}, "oauth": {"auth-dir": "/runtime/gateway/auth"},
+               "plugins": {"enabled": False, "dir": "/runtime/gateway/plugins"},
+               "observability": {"logs": {"logging-to-file": False},
+                                 "usage": {"usage-statistics-enabled": False}}}
+        changes = [("gemini-api-key", ["synthetic-provider"]),
+                   ("openai-compatibility", [{"base-url": "http://example.invalid"}]),
+                   ("ampcode", {"upstream-url": "http://example.invalid"}),
+                   ("api-keys", {"codex": ["synthetic-provider"]}),
+                   ("providers", {"codex": {}}), ("oauth", {"providers": {"codex": {}}}),
+                   ("server", {"host": "0.0.0.0", "port": 8317}),
+                   ("plugins", {"enabled": True}), ("access", {"api-keys": ["existing"]}),
+                   ("management", {"allow-remote": True}), ("oauth", None), ("server", [])]
+        args = type("Args", (), {"cpa_port": 8317})()
+        for name, value in changes:
+            bad = copy.deepcopy(cfg)
+            bad[name] = value
+            with self.subTest(field=name), patch.object(probe, "json_value", return_value=bad), \
+                    patch.object(probe, "set_only_client_keys") as write, \
+                    self.assertRaises(probe.StopProof):
+                probe.run(args, "private", {"events": [], "_started": 0})
+            write.assert_not_called()
 
     def test_preflight_stop_preserves_sanitized_evidence(self):
         output = io.StringIO()

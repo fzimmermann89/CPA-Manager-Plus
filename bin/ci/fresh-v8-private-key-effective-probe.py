@@ -82,8 +82,13 @@ def check_cpa(port, phase, tokens, evidence):
     return statuses
 
 
-def set_only_client_keys(port, management_key, values, phase, evidence):
+def set_only_client_keys(port, management_key, values, previous, phase, evidence):
+    stored = json_value(port, "/v8/management/config/access/api-keys",
+                        management_key, evidence, phase + "-before-write")
+    if stored != previous:
+        raise StopProof("Client Key ownership changed before " + phase)
     # No retries: a timeout leaves write state unknown and the experiment STOPS.
+    event(evidence, phase=phase, action="config-put-attempt", keyCount=len(values))
     status, _ = request(port, "PUT", "/v8/management/config/access/api-keys",
                         management_key, values)
     event(evidence, phase=phase, action="config-put", status=status, keyCount=len(values))
@@ -171,19 +176,26 @@ def run(args, management, evidence):
     management_cfg = cfg.get("management", {})
     plugins = cfg.get("plugins", {})
     oauth = cfg.get("oauth", {})
-    # Refuse configured upstream/provider accounts even if the Client Key list
-    # happens to be empty. The auth directory must also be checked by Docker.
-    if (not isinstance(oauth, dict) or
-            oauth.get("auth-dir") != "/runtime/gateway/auth" or
-            oauth.get("providers") not in (None, {}) or
-            cfg.get("api-keys") not in (None, {}) or
-            cfg.get("providers") not in (None, {})):
-        raise StopProof("Non-synthetic provider or OAuth configuration detected")
+    # The exact empty seed is the only writable experiment target. Official v8
+    # accepts legacy provider aliases too; checking a few canonical fields does
+    # not exclude real credentials. No synthetic Provider exception is implied.
+    if (set(cfg) - {"config-version", "server", "management", "access", "oauth",
+                    "plugins", "observability"} or
+            oauth != {"auth-dir": "/runtime/gateway/auth"} or
+            plugins != {"enabled": False, "dir": "/runtime/gateway/plugins"} or
+            cfg.get("access") != {"api-keys": []} or
+            cfg.get("observability") != {
+                "logs": {"logging-to-file": False},
+                "usage": {"usage-statistics-enabled": False}}):
+        raise StopProof("Configuration differs from the empty synthetic proof seed")
     if (cfg.get("config-version") != 8 or
-            not isinstance(server, dict) or server.get("host") != "127.0.0.1" or
-            server.get("port") != 8317 or not isinstance(management_cfg, dict) or
+            server != {"host": "127.0.0.1", "port": 8317} or
+            not isinstance(management_cfg, dict) or
+            set(management_cfg) != {"allow-remote", "secret-key", "disable-control-panel",
+                                    "disable-auto-update-panel"} or
             management_cfg.get("allow-remote") is not False or
-            not isinstance(plugins, dict) or plugins.get("enabled") is not False):
+            management_cfg.get("disable-control-panel") is not True or
+            management_cfg.get("disable-auto-update-panel") is not True):
         raise StopProof("Management view is not the constrained loopback CPA seed")
     if json_value(args.cpa_port, "/v8/management/config/access/api-keys",
                   management, evidence, "preflight") != []:
@@ -198,12 +210,12 @@ def run(args, management, evidence):
     await_auth(args.cpa_port, "empty", empty, empty, tokens,
                args.ingress_port, evidence, args.reload_seconds)
 
-    set_only_client_keys(args.cpa_port, management, [first], "install", evidence)
+    set_only_client_keys(args.cpa_port, management, [first], [], "install", evidence)
     await_auth(args.cpa_port, "install",
                {"absent": 401, "wrong": 401, "valid": 200}, empty, tokens,
                args.ingress_port, evidence, args.reload_seconds)
 
-    set_only_client_keys(args.cpa_port, management, [second], "replace", evidence)
+    set_only_client_keys(args.cpa_port, management, [second], [first], "replace", evidence)
     evidence["_latest_secret"] = second
     tokens = {"old": first, "new": second, "absent": None, "wrong": "synthetic-invalid"}
     replaced = {"old": 401, "new": 200, "absent": 401, "wrong": 401}
@@ -211,7 +223,7 @@ def run(args, management, evidence):
                {"old": 200, "new": 401, "absent": 401, "wrong": 401}, tokens,
                args.ingress_port, evidence, args.reload_seconds)
 
-    set_only_client_keys(args.cpa_port, management, [], "clear-last", evidence)
+    set_only_client_keys(args.cpa_port, management, [], [second], "clear-last", evidence)
     await_auth(args.cpa_port, "clear-last", {name: 200 for name in tokens}, replaced,
                tokens, args.ingress_port, evidence, args.reload_seconds)
     evidence["result"] = "PASS_WITH_EXPLICIT_STOPS"

@@ -60,7 +60,7 @@ The test-only [runner](../../../bin/ci/fresh-v8-private-key-effective-probe.py) 
 
 This experiment does **not** implement automatic CPA config application, effective-Key attestation, revocation, reload completion acknowledgment, Gateway admission, or cross-generation restart recovery. Only the previously demonstrated Pending Ingress behavior is allowed. Gateway/Beta/External/Upgrade/Release continue STOP.
 
-Overdesign, overdefense, overabstraction and scope expansion: PASS; one test-only runner and this existing evidence document, no new product owner or storage authority.
+Overdesign, overdefense, overabstraction and scope expansion: PASS; one test-only runner, focused offline regressions and this existing evidence document, no new product owner or storage authority.
 
 ### Reproducible one-shot Python execution
 
@@ -91,6 +91,8 @@ Before any Client Key write, verify and privately record:
 - Container IDs, image IDs, Linux/amd64, actual process executable/arguments/UID, `/proc/<cpa-pid>/exe` SHA-256, current Runtime identity/generation/active artifact and network namespace IDs. Recheck the same identity after execution; no service restart or other writer may overlap the run. Do not use stale image tags or a saved checksum alone.
 - CPA 8317, Runtime 9081, Manager 18319 and Ingress control 9082 listen only on loopback. Only Ingress is published at host `127.0.0.1:$CPAMP_PROOF_PUBLIC_PORT`. An ordinary same-bridge participant must fail to connect to private ports, with a reachable Ingress/503 positive control.
 - Full persisted seed/config contains only the constrained synthetic settings; no Provider, OAuth, existing Client Key, environment credentials, plugin or real upstream. Management credential comes from the private seed above. Runtime image remains without Python (`docker exec "$runtime_id" sh -c '! command -v python3'`). Read-only Management config/key-list checks must agree before writes.
+
+The runner accepts only this seed's config shape, including disabled panel updates/log persistence/usage collection. Additional roots (including historical provider aliases or Amp upstream settings), OAuth options, TLS/bind changes and plugin settings are rejected before writes. It rechecks the previous Client Key list immediately before each of its three writes and stops on ownership drift. This is not a compare-and-swap API: the verified disposable topology **must have no concurrent writer**. The runner does not inspect Docker or `/proc`; those identity/storage checks remain explicit operator prerequisites, not self-attestation through opt-in environment flags. Synthetic upstream execution is **NOT RUN by this runner**; adding a Provider is outside its fixed empty-seed contract.
 
 After these checks, set `runtime_id` from the **exact** project's `cpamp-runtime` container, `probe_image` to a locally inspected Linux/amd64 Python image ID (for example `python:3.13-alpine` resolved with `docker image inspect --format '{{.Id}}'`), and `CPAMP_PROOF_PUBLIC_PORT` to the profile's actual port. Then:
 
