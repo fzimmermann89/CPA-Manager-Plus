@@ -18,6 +18,6 @@ Cross-generation CPA reactivation and post-restart live isolation from #1008 rem
 
 ## Test/rollback
 
-Unit/integration regressions cover zero Key, correct/wrong Key, corrupted DB or encryption key, disabled endpoint, nonloopback network, method, encoded path and Ingress deny. No live Docker or Runtime-effective proof is claimed. To roll back, leave the opt-in variable unset (default), or revert the isolated files. Keep this Draft pending independent security acceptance.
+Unit/integration regressions cover zero Key, correct/wrong Key, `missing`/`superseded` canonical Key state, corrupted DB or encryption key, disabled endpoint, method, encoded path and Ingress deny. The private Manager handler is also tested in a separate child process over a real IPv4 loopback TCP socket (enabled/disabled and positive/negative requests); a public Ingress TCP listener verifies that neither Fresh nor Legacy forwards the private path to Manager or CPA. Nonloopback Manager peer rejection is tested with synthetic request peers only. No external-observer, Docker-network, live CPA, or Runtime-effective proof is claimed. To roll back, leave the opt-in variable unset (default), or revert the isolated files. Keep this Draft pending independent security acceptance.
 
 Overdesign, overdefense, overabstraction and scope expansion: PASS — no new persistence, authentication platform, model proxy, CPA fork or release behavior.
