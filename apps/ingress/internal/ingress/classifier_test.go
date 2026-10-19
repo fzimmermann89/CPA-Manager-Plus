@@ -154,3 +154,19 @@ func TestClassifierControlMatcherIsReplaceable(t *testing.T) {
 		t.Fatalf("transitional route leaked into replacement matcher: %v", got)
 	}
 }
+
+func TestFreshPrivateStagedKeyProbeNeverRoutesToGateway(t *testing.T) {
+	classifier := NewTransitionalClassifier()
+	for _, target := range []string{
+		"/internal/fresh-client-key-stage/probe",
+		"/internal%2ffresh-client-key-stage%2fprobe",
+		"/internal%252ffresh-client-key-stage%252fprobe",
+		"/internal/fresh-client-key-stage/probe/extra",
+	} {
+		request := httptest.NewRequest(http.MethodPost, target, nil)
+		request.Header.Set("Authorization", "Bearer staged-secret")
+		if got := classifier.ClassifyRequest(request); got != RouteDeny {
+			t.Fatalf("private key proof leaked to Gateway: %s => %v", target, got)
+		}
+	}
+}
