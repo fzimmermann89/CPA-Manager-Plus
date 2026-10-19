@@ -119,9 +119,11 @@ def main():
     evidence = {"result": "STOP", "binary": "official-v8.0.13-verify-out-of-band",
                 "events": [], "_latest_secret": None}
     cfg = json_value(args.cpa_port, "/v8/management/config", management)
-    server = cfg.get("server", {}) if isinstance(cfg, dict) else {}
-    management_cfg = cfg.get("management", {}) if isinstance(cfg, dict) else {}
-    plugins = cfg.get("plugins", {}) if isinstance(cfg, dict) else {}
+    if not isinstance(cfg, dict):
+        raise StopProof("Management config projection is not an object")
+    server = cfg.get("server", {})
+    management_cfg = cfg.get("management", {})
+    plugins = cfg.get("plugins", {})
     if (cfg.get("config-version") != 8 or
             not isinstance(server, dict) or server.get("host") != "127.0.0.1" or
             server.get("port") != 8317 or not isinstance(management_cfg, dict) or
