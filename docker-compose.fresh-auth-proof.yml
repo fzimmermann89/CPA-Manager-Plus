@@ -1,0 +1,74 @@
+# Private, disposable linux/amd64 Fresh security proof only; NOT a release profile.
+# Ingress shares Runtime's network namespace to reach CPA's loopback listener.
+# The only published endpoint is a host-loopback Ingress port.
+services:
+  cpamp-runtime:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.runtime
+      target: v8-amd64-loopback-proof
+    image: cpamp-runtime:fresh-auth-proof
+    restart: 'no'
+    ports:
+      - '127.0.0.1:${CPAMP_PROOF_PUBLIC_PORT:-28471}:18317'
+    environment:
+      CPAMP_RUNTIME_ADDR: '0.0.0.0:9081'
+      CPAMP_RUNTIME_IDENTITY: 'embedded-auth-proof'
+      CPAMP_RUNTIME_JOURNAL_PATH: '/runtime/supervisor/operations.sqlite'
+      CPAMP_RUNTIME_CPA_ADDR: '127.0.0.1:8317'
+      CPAMP_RUNTIME_CPA_UID: '10001'
+      CPAMP_RUNTIME_CPA_GID: '10001'
+      CPAMP_CPA_EXECUTABLE: '/usr/local/bin/cli-proxy-api'
+      CPAMP_RUNTIME_TOKEN_FILE: '/run/cpamp/runtime-secret/token'
+    volumes:
+      - cpamp-proof-runtime-data:/runtime
+      - cpamp-proof-runtime-secret:/run/cpamp/runtime-secret
+
+  cpamp-manager:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.manager-server
+    image: cpamp-manager:fresh-auth-proof
+    restart: 'no'
+    expose:
+      - '18317'
+    environment:
+      HTTP_ADDR: '0.0.0.0:18317'
+      USAGE_DB_PATH: '/data/usage.sqlite'
+      CPA_MANAGER_DATA_KEY_PATH: '/data/data.key'
+      CPA_UPSTREAM_URL: 'http://cpamp-runtime:8317'
+      CPAMP_RUNTIME_URL: 'http://cpamp-runtime:9081'
+      CPAMP_RUNTIME_TOKEN_FILE: '/run/cpamp/runtime-secret/token'
+      CPAMP_INGRESS_CONTROL_URL: 'http://cpamp-runtime:9082'
+      CPAMP_PUBLIC_ORIGIN: 'http://127.0.0.1:${CPAMP_PROOF_PUBLIC_PORT:-28471}'
+    volumes:
+      - cpamp-proof-manager-data:/data
+      - cpamp-proof-runtime-secret:/run/cpamp/runtime-secret:ro
+    depends_on:
+      - cpamp-runtime
+
+  cpamp-ingress:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.ingress
+    image: cpamp-ingress:fresh-auth-proof
+    restart: 'no'
+    network_mode: 'service:cpamp-runtime'
+    # Publish only through Runtime, which owns the shared network namespace.
+    # Do NOT publish 8317/9081/9082 or add ports to this service.
+    environment:
+      CPAMP_INGRESS_ADDR: '0.0.0.0:18317'
+      CPAMP_MANAGER_URL: 'http://cpamp-manager:18317'
+      CPAMP_GATEWAY_URL: 'http://127.0.0.1:8317'
+      CPAMP_INGRESS_CONTROL_ADDR: '0.0.0.0:9082'
+    depends_on:
+      - cpamp-runtime
+      - cpamp-manager
+
+volumes:
+  cpamp-proof-manager-data:
+  cpamp-proof-runtime-data:
+  cpamp-proof-runtime-secret:
