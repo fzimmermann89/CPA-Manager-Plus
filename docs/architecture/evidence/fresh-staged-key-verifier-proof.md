@@ -74,7 +74,8 @@ export proof_dir
 python3 - <<'PY'
 import json, os, pathlib, secrets
 p = pathlib.Path(os.environ['proof_dir'])
-key = 'cpamp_proof_management_' + secrets.token_hex(32)
+key = secrets.token_hex(32)  # 64 ASCII bytes; official CPA bcrypt limit is 72 bytes.
+assert 32 <= len(key.encode('utf-8')) <= 72
 seed = pathlib.Path('docker/runtime/config.v8.loopback-proof.yaml').read_text()
 assert seed.count("secret-key: ''") == 1
 (p / 'seed.yaml').write_text(seed.replace("secret-key: ''", 'secret-key: ' + json.dumps(key)))
