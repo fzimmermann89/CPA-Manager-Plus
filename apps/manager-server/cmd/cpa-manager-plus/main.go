@@ -11,6 +11,7 @@ import (
 	httppprof "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/command/usagecompact"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/config"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/httpapi"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/operator"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/processlock"
 	sqliterepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
@@ -243,6 +245,54 @@ func runServer() {
 		Addr:              cfg.HTTPAddr,
 		Handler:           serverApp.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Keep the admin and public authorization boundaries on separate listeners.
+	if addr := os.Getenv("CPA_OPERATOR_ADDR"); addr != "" {
+		host, _, e := net.SplitHostPort(cfg.HTTPAddr)
+		if e != nil || (host != "localhost" && !net.ParseIP(host).IsLoopback()) {
+			log.Fatal("operator mode requires a loopback-only admin listener")
+		}
+		passwordBytes, e := os.ReadFile(os.Getenv("CPA_OPERATOR_PASSWORD_FILE"))
+		if e != nil || len(strings.TrimSpace(string(passwordBytes))) < 12 {
+			log.Fatal("operator password file must contain at least 12 characters")
+		}
+		service, e := operator.New(func(c context.Context) (operator.Connection, error) {
+			setup, ok, err := serverApp.AppContext().ManagerConfigService.ResolveSetup(c)
+			if err != nil {
+				return operator.Connection{}, err
+			}
+			if !ok {
+				return operator.Connection{}, errors.New("CPA is not configured")
+			}
+			return operator.Connection{URL: setup.CPAUpstreamURL, Key: setup.ManagementKey}, nil
+		}, filepath.Join(cfg.DataDir, "window-activation.json"))
+		if e != nil {
+			log.Fatalf("activation settings: %v", e)
+		}
+		adminMux := http.NewServeMux()
+		adminMux.Handle("/activation/", service.AdminHandler(serverApp.AppContext().AdminAuthService.VerifyHeader))
+		adminMux.Handle("/", server.Handler)
+		server.Handler = adminMux
+		publicServer := &http.Server{Addr: addr, Handler: service.PublicHandler(strings.TrimSpace(string(passwordBytes))), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16384}
+		publicListener, e := net.Listen("tcp", addr)
+		if e != nil {
+			log.Fatalf("operator listen: %v", e)
+		}
+		go func() {
+			if e := publicServer.Serve(publicListener); e != nil && !errors.Is(e, http.ErrServerClosed) {
+				log.Printf("operator server stopped")
+				stop()
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = publicServer.Shutdown(c)
+		}()
+		service.Start(ctx)
+		log.Printf("operator listening on %s; schedule configuration on private /activation/", addr)
 	}
 	pprofServer, err := newPprofServer(cfg.PprofAddr)
 	if err != nil {

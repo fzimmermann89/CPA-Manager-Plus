@@ -958,6 +958,7 @@ function MainLayoutContent({ routeBase = '', demoMode = false }: MainLayoutProps
           </div>
 
           <div className="nav-section">
+            <a className="nav-item" href="/activation/" title="Configure scheduled account window activation"><span className="nav-label">Window activation</span></a>
             {navSections.map((section, sectionIndex) => (
               <div className="nav-menu-section" key={`nav-section-${sectionIndex}`}>
                 {sectionIndex > 0 && <div className="nav-menu-divider" aria-hidden="true" />}
