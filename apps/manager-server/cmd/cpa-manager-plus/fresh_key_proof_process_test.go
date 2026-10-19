@@ -140,8 +140,7 @@ func TestPrivateStagedKeyProofListenerChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	fmt.Fprintf(os.Stdout, "READY %s
-", listener.Addr().String())
+	fmt.Fprintf(os.Stdout, "READY %s\n", listener.Addr().String())
 	if err := http.Serve(listener, newFreshApplication(opened, config.Config{}, nil)); err != nil {
 		t.Fatal(err)
 	}
