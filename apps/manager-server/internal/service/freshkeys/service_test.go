@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	identityrepo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/adapters/sqlite/identitystore"
+	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/domain/identity"
 	repo "github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/freshkeys"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/repository/sqlite"
 	"github.com/seakee/cpa-manager-plus/apps/manager-server/internal/security"
@@ -160,6 +161,19 @@ func TestMatchStagedSecretDoesNotGrantRuntimeAuthorization(t *testing.T) {
 		ok, err := svc.MatchStagedSecret(ctx, v.secret)
 		if err != nil || ok != v.want {
 			t.Fatalf("staged match mismatch: got %v, want %v; err %v", ok, v.want, err)
+		}
+	}
+	// Only an active canonical identity may match. A previously valid secret
+	// must stop matching after each supported non-active lifecycle transition.
+	for _, lifecycle := range []identity.Lifecycle{identity.LifecycleMissing, identity.LifecycleSuperseded} {
+		if _, err := db.ExecContext(ctx,
+			"update gateway_api_key_identities set lifecycle=?, revision=revision+1 where id=?",
+			lifecycle, first.Key.ID,
+		); err != nil {
+			t.Fatalf("set %s key lifecycle: %v", lifecycle, err)
+		}
+		if ok, err := svc.MatchStagedSecret(ctx, first.CreatedSecret); err != nil || ok {
+			t.Fatalf("%s key matched staged proof: %v, %v", lifecycle, ok, err)
 		}
 	}
 	if ok, err := New(repo.New(db), nil).MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
