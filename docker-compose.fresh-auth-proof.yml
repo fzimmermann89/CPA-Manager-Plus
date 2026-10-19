@@ -14,7 +14,7 @@ services:
     ports:
       - '127.0.0.1:${CPAMP_PROOF_PUBLIC_PORT:-28471}:${CPAMP_PROOF_PUBLIC_PORT:-28471}'
     environment:
-      CPAMP_RUNTIME_ADDR: '0.0.0.0:9081'
+      CPAMP_RUNTIME_ADDR: '127.0.0.1:9081'
       CPAMP_RUNTIME_IDENTITY: 'embedded-auth-proof'
       CPAMP_RUNTIME_JOURNAL_PATH: '/runtime/supervisor/operations.sqlite'
       CPAMP_RUNTIME_CPA_ADDR: '127.0.0.1:8317'
@@ -64,7 +64,7 @@ services:
       CPAMP_INGRESS_ADDR: '0.0.0.0:${CPAMP_PROOF_PUBLIC_PORT:-28471}'
       CPAMP_MANAGER_URL: 'http://127.0.0.1:18319'
       CPAMP_GATEWAY_URL: 'http://127.0.0.1:8317'
-      CPAMP_INGRESS_CONTROL_ADDR: '0.0.0.0:9082'
+      CPAMP_INGRESS_CONTROL_ADDR: '127.0.0.1:9082'
     depends_on:
       - cpamp-runtime
       - cpamp-manager
