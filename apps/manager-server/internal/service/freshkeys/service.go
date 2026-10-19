@@ -4,8 +4,8 @@ package freshkeys
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"strings"
