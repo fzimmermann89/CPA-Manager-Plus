@@ -120,3 +120,58 @@ func TestPersistRestartReconcileAndConcurrentCreation(t *testing.T) {
 		t.Fatal("plaintext fallback accepted")
 	}
 }
+
+func TestMatchStagedSecretDoesNotGrantRuntimeAuthorization(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "fresh-keys.sqlite")
+	db, err := sqlite.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	p, err := security.NewProtector([]byte("fresh-private-key-proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := New(repo.New(db), p)
+	for _, candidate := range []string{"", "bad", "cpamp_sk_" + strings.Repeat("0", 64)} {
+		ok, err := svc.MatchStagedSecret(ctx, candidate)
+		if err != nil || ok {
+			t.Fatalf("zero-key accepted %q: %v", candidate, err)
+		}
+	}
+	first, created, err := svc.Create(ctx, strings.Repeat("a", 32))
+	if err != nil || !created {
+		t.Fatal("cannot create staged key", err)
+	}
+	for _, v := range []struct {
+		secret string
+		want   bool
+	}{
+		{first.CreatedSecret, true},
+		{first.CreatedSecret[:len(first.CreatedSecret)-1] + "0", false},
+		{"cpamp_sk_" + strings.Repeat("0", 64), false},
+		{"", false},
+	} {
+		ok, err := svc.MatchStagedSecret(ctx, v.secret)
+		if err != nil || ok != v.want {
+			t.Fatalf("staged match mismatch: got %v, want %v; err %v", ok, v.want, err)
+		}
+	}
+	if ok, err := New(repo.New(db), nil).MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("missing protector allowed a key")
+	}
+	wrong, err := security.NewProtector([]byte("wrong-private-key-proof"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := New(repo.New(db), wrong).MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("wrong protector accepted a key")
+	}
+	if _, err := db.Exec("update fresh_client_api_keys set secret_hash=?", strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := svc.MatchStagedSecret(ctx, first.CreatedSecret); err == nil || ok {
+		t.Fatal("tampered hash was not fail-closed")
+	}
+}
