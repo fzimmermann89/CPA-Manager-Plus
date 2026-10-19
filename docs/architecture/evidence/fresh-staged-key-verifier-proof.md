@@ -47,6 +47,8 @@ This is a source-only feasibility finding. No new Management write, runtime proc
 
 ## Official CPA v8.0.13 private key-effect test (Plan #52)
 
+**Latest bounded development result:** the closed-loop run below passed the private experiment, including Supervisor-managed CPA, real key changes and a separate synthetic upstream control. The earlier STOP report remains historical. Keep the PR Draft for distinct independent acceptance; Gateway/Beta and post-restart qualification remain STOP.
+
 The test-only [runner](../../../bin/ci/fresh-v8-private-key-effective-probe.py) makes **destructive client-key configuration writes**. It must run exclusively in a fresh, disposable, private #1008 Compose profile, never against a user's running CPA, existing volumes or actual credentials. The merged [Plan #52](https://github.com/seakee/cpamp-plan/pull/52) authorizes only this bounded experiment, **not** a Manager configuration writer or Gateway enablement.
 
 **Preflight and invocation:**
@@ -177,3 +179,88 @@ The child exit cause is **undetermined**: the existing child launcher discards s
 **Round 4 — scope self-check:** Overdesign **PASS** (no test platform or product feature); Overdefense **PASS** (fixed-seed and ownership checks protect the destructive operation); Overabstraction **PASS** (one bounded observation loop and status-event helper); Scope Expansion **PASS** (runner, focused tests, existing evidence document only). No Gateway, Beta, release, formal Manager-to-CPA writer, revocation or recovery capability is granted.
 
 **Conclusion: STOP; keep #1012 Draft and do not merge.** The two original P2 repairs and the additional bounded preflight repair are delivered, but the required real official CPA authentication/transition evidence and live process isolation are absent. A separately authorized investigation must establish why the disposable official child exits; only a fresh, fully attested run can satisfy this experiment's remaining acceptance gate. Successful static review, offline tests or CI cannot replace it.
+
+### Closed-loop development verification, 2026-10-19 — bounded experiment PASS
+
+This is **Codex development self-check, not ChatGPT's final independent acceptance**. It consumes merged [Plan #52](https://github.com/seakee/cpamp-plan/pull/52), [Plan #53 / engineering policy §11.8](https://github.com/seakee/cpamp-plan/pull/53) and the maintainer's explicit complete-slice authorization. Tested implementation: `63260846812bdf240927c675d431888dd5626ffd`, based on `v2@22b6f786415ba227e9cb64e350237906d98ec06f`. The following report-only commit changes no runner, tests, Docker inputs or product code. The exact final HEAD and its applicable CI are recorded in the PR handoff.
+
+**Delivered correction and internal iteration.** The already committed 64-byte `secrets.token_hex(32)` Management Secret fixes the previous 87-byte/bcrypt failure; the documented preparation snippet was executed unchanged and produced three correct environment-file entries. No shared Supervisor defect or production repair was required. One supplemental synthetic-provider attempt stopped before any Client Key write because its temporary comparison omitted official ConfigV8's injected `auth_index`. Exact upstream `internal/api/handlers/management/config_v8.go:55` confirms this read-only metadata. The temporary client now checks its 16-hex-digit shape and excludes only that field from the exact synthetic-provider comparison. That first environment was destroyed; the corrected test ran in an entirely new environment. The maintained runner's strict empty-provider preflight was not relaxed.
+
+#### Supervisor-managed identity and storage
+
+Docker Engine 27.3.1 Linux/amd64, Compose 2.30.3-desktop.1. Every project/container/network name was absent before creation; each of the **nine volumes across three attempts** was independently inspected empty before service start. Only private synthetic seeds were mounted, read-only; no Docker socket, real Provider/OAuth/user credential, existing volume or Runtime generation was used. The two successful projects were:
+
+| Fact | Maintained empty-provider runner | Separate synthetic-upstream control |
+| --- | --- | --- |
+| Project | `cpamp-keyaccept-0d441826` | `cpamp-upstream-f2198421` |
+| Runtime container | `9bbf21daa6cca0755712439297521d1b86fd238b93290401a9fa2d0decf8448c` | `639d7e55db244fda03d9f0ce2a636fe245075f764515227b8cad727dbe733062` |
+| Runtime identity / generation | `embedded-auth-proof` / `17188170161380247809` | `embedded-auth-proof` / `3140510193300187722` |
+| CPA PID / start ticks | `301` / `1124`, unchanged before/after experiment | `294` / `33104`, unchanged before/after experiment |
+| Identity observation interval, UTC | 14:26:41.369075–14:26:57.738892 | 14:31:23.492564–14:31:41.652108 |
+| Sole published endpoint | host `127.0.0.1:51509` Ingress | host `127.0.0.1:51965` Ingress |
+| CPA executable / argv / cwd | `/usr/local/bin/cli-proxy-api`, no arguments, `/runtime/gateway` | same |
+| Actual process UID/GID/groups | 10001 / 10001 / 10001 | same |
+| Effective config | `/runtime/gateway/config.yaml`, 0600, 10001:10001 | same |
+
+Actual `/proc/<pid>/exe` hashes match **`b682e9e42586263f476888361514f68f89ff4ebf89a5dadba394b850b797ce41`**, official CPA v8.0.13 Linux/amd64, upstream tag commit `d7914afdedca7af95ee974a42453dc49fc1388ce`. Immutable Runtime image `sha256:075b6822a17a4cee76904055a1c684ee0e321256960a035ddfa27afefb257314`, Manager `sha256:34d0c09631af5eb9ab1cd3e6ad8cafa29228d24317fca0670a0240806e3b22c2`, Ingress `sha256:418e55792cb2827c0c50dfd05109c10cb9949b9d4d1deee765b7ab76e6c385c0` were reused after verifying their product/build inputs have no changes from image-build implementation `16dfbdca`. Python observer image: `sha256:050f6d1f4e5f89af62e03f6fcd1c06be2a401339b3694adc4c0a2850d9d8b1e7`.
+
+Both CPAs started through canonical Fresh initialize/claim/Admin/new_managed staged -> committed, without direct Start substitution, checkpoint reset or generation-fence bypass. Repeated authenticated Runtime status returned **ready**, `/healthz` returned **200**, authenticated Management key-list GET returned **200 / []** before and after the experiments. Each copied journal contains exactly **one succeeded Start and zero auto_recovery**; recovery stayed armed with all three attempts remaining. All container restart counts were zero. Actual `/proc` identity, repeated HTTP, unchanged PID/start ticks/generation and live socket tables establish the bounded steady-state evidence; journal success or an artifact declaration alone does not.
+
+`/runtime/supervisor/destination` was absent. No destination stage or `-config` path was used. This matters because `lifecycle/destination.go:217` can generate a wildcard listener for a different, unexercised adoption path: if that path appears in this loopback experiment, STOP instead of assuming the seed remains effective.
+
+#### Actual key-write and authentication matrix
+
+The maintained runner executed as UID/GID 65534 in the existing trusted Runtime namespace with a read-only script mount, all capabilities dropped and no extra port. Exit code **0**, result **PASS_WITH_EXPLICIT_STOPS**, `gatewayAuthorized=false`, `runtimeEffective=false`. Exactly three official Management PUTs, no retries or rollback; each returned 200 and was followed by matching persisted readback. The separate request-auth results below establish live effect independently of those write/readback signals.
+
+| Phase | PUT completion UTC / status | Private `/v1/models` statuses in every sampled stable sweep | Stable observation | Public Ingress |
+| --- | --- | --- | --- | --- |
+| Initial zero keys | no write | absent 200, wrong 200, generated key 200 | 9 sweeps / 2.052491 s | 27 requests, all 503 |
+| Install first | 14:26:50.509668 / 200 | absent 401, wrong 401, first 200 | 9 / 2.058114 s | 27, all 503 |
+| Replace first with second | 14:26:52.718265 / 200 | old 401, new 200, absent 401, wrong 401 | 9 / 2.058016 s | 27, all 503 |
+| Clear last | 14:26:54.927563 / 200 | old 200, new 200, absent 200, wrong 200 | 9 / 2.055994 s | 27, all 503 |
+
+There were **108 Ingress 503 checks** in these four phases. No transient state was sampled after the maintained runner's write/readback sequence; its first post-readback sweep already matched each target. This is not evidence of synchronous reload or zero latency. Its loop still required the full bounded stability window; timeout, regression and uncertainty negatives remain tested.
+
+The supplemental control's independent read-only observer spanned **before PUT through convergence**, collecting **4,148 individual model-list HTTP observations**. It observed the old and new states during install/replace/clear; each credential's compressed sequence had at most one status change, with no observed regression or unexpected status. During replacement, absent/wrong stayed 401; old changed 200 -> 401 and new 401 -> 200. The replacement PUT completed at **14:31:35.595054**; first observed target requests were old/401 at **14:31:35.602576**, new/200 at **14:31:35.602992**. These are request-start timestamps from sequential requests, not an atomic key-swap measurement or exact activation latency. All four supplemental phases also satisfied 9-sweep, >2-second stable windows. Raw observations preserve the time order rather than attributing effect to PUT 200 or config readback.
+
+**Zero-key 200 and anonymous forwarding are official CPA data-plane behavior, never CPAMP authorization.** CPAMP public Ingress remained Pending in every sampled request, including after removing the last key. No Manager-staged key result was promoted into a Runtime-effective grant.
+
+#### Independent synthetic upstream and network boundaries
+
+The maintained runner continues to reject any Provider. An actual negative run in the separate provider environment returned **STOP before any PUT attempt**, proving that protection remains in force. A different, temporary one-shot control then validated its exact known synthetic configuration before writes; it did not claim to be the maintained empty-seed runner.
+
+Its only extra seed resource was one `api-keys.openai-compatibility` provider: name `proof-upstream`, URL **`http://127.0.0.1:18080/v1`**, `request-retry: 0`, a newly generated synthetic credential and explicit model/alias `proof-model`. No proxy, real account or external upstream was configured. A separate unprivileged, capability-free Python container shared only the trusted Runtime network namespace and served a fixed non-streaming `/v1/chat/completions` response on loopback 18080. It had no published ports or product-volume access. The observer recorded only timestamps, synthetic request IDs, path/model and a boolean confirming the synthetic upstream credential; it did not log authorization values.
+
+| Phase | Actual private chat statuses: absent / wrong / old / new | Independently observed upstream arrivals | Public Ingress POST |
+| --- | --- | --- | --- |
+| Zero keys | 200 / 200 / 200 / 200 | 4 matching synthetic IDs | four 503, zero matching extra arrivals |
+| First key installed | 401 / 401 / 200 / 401 | only old ID, 1 arrival | four 503, zero extra arrivals |
+| Key replaced | 401 / 401 / 401 / 200 | only new ID, 1 arrival | four 503, zero extra arrivals |
+| Last key cleared | 200 / 200 / 200 / 200 | 4 matching synthetic IDs | four 503, zero extra arrivals |
+
+Every allowed private POST returned the fixed synthetic completion. Exactly **10 arrivals**, **6 rejected private requests without arrivals**, and **16 public Ingress requests without arrivals** were correlated against the independent upstream's raw console observations, including a post-request drain interval. Successful requests before/after the negative cases calibrated upstream reachability. This proves only those tagged, non-streaming requests in the measured window; it does not prove every protocol or permanent packet nonarrival.
+
+Live socket tables showed CPA 8317, Runtime 9081, Manager 18319 and Ingress control 9082 on **127.0.0.1**; Manager/Ingress shared the exact Runtime namespace. Before/after each successful experiment, ordinary same-bridge observer containers made three rounds against all four private ports: **48 total refused connections**, while **12 direct bridge Ingress positive controls returned 503**. These negatives were performed with the matching CPA process alive. Only host-loopback Ingress was published. No Management/CPA/control port, Docker socket or additional host listener was exposed.
+
+#### Final regressions, evidence and scope
+
+| Check | Result |
+| --- | --- |
+| Python syntax; 13 offline positive/negative regressions | PASS on host; all 13 also PASS in unprivileged read-only Linux/amd64 Python container |
+| Corrected Secret on original Supervisor-managed Fresh consumer | PASS; live identity, repeated Ready/health/Management, no exit/recovery churn |
+| Install / replace / clear; sampled async stability | PASS, actual official CPA, three writes per successful project |
+| Extra Provider rejection before write | PASS, actual Management view in the separate lab |
+| Synthetic non-streaming forwarding / rejection / Ingress nonarrival | PASS for the exact tagged requests above |
+| Full changed-file self-review | 3/3 files reviewed, none skipped; no remaining confirmed in-scope blocking defect |
+| Product rebuild | Not rerun: only documentation changed after tested implementation; immutable image inputs verified identical. Applicable final-HEAD CI is required separately. |
+| Restart / cross-generation reactivation | NOT RUN / existing BLOCKED gate preserved; no bypass of 409 |
+| Streaming, Responses, WebSocket/upgrade, routed IPv6, independent remote host | NOT RUN; no broader qualification claim |
+| Formal Manager-to-CPA writer / enabled Gateway / External / Upgrade / Beta / Release | STOP / not authorized by this private experiment |
+
+Final cleanup removed exactly the three task-owned Compose projects, nine new volumes, three project networks and two synthetic upstream containers, plus their ephemeral observer containers. Primary cleanup completed **14:30:41.776003 UTC**; corrected upstream project **14:32:17.403651 UTC**. The first failed supplemental project's evidence and zero-write facts were retained before its separate cleanup. Scoped post-cleanup checks found zero project resources; no global prune or unrelated-worktree cleanup occurred.
+
+Local evidence directories are `bin/tmp/pr1012-complete.1S09dY`, `bin/tmp/pr1012-upstream.FaiR2n` (pre-write comparison failure), and `bin/tmp/pr1012-upstream-fixed.9zDrPZ`. The handoff supplies the local-only raw archive, hashes and sanitized event package. Raw seed/env/handoff/session/Runtime tokens and full Docker/config snapshots remain private; public report/event files are checked against known credentials before publication. No plaintext synthetic key is included here.
+
+Overdesign **PASS** (no product test platform); Overdefense **PASS** (exact target checks retained); Overabstraction **PASS** (existing bounded observer reused, temporary control only); Scope Expansion **PASS** (no lifecycle/auth framework, formal writer, default image/Compose or official binary change). Merge-value self-assessment: **15/18** — importance 3, scope 1, fit 3, evidence 3, implementation 3, risk cost 2. These scores cannot grant independent acceptance.
+
+**Conclusion: bounded private-experiment development PASS; submit the stable exact HEAD for independent acceptance.** Recommend source-only merge only after that review and applicable exact-HEAD CI. Keep #1012 Draft and do not auto-merge. This evidence grants no Gateway/Beta operation, generation recovery or release eligibility.
