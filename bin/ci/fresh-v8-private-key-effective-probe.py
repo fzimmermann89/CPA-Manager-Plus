@@ -116,7 +116,7 @@ def main():
     if len(management) < 32 or any(ch.isspace() for ch in management):
         raise StopProof("Missing private synthetic Management credential")
 
-    evidence = {"result": "STOP", "binary": "official-v8.0.13-verify-out-of-band",
+    evidence = {"result": "STOP", "binaryVerification": "NOT_CHECKED_BY_RUNNER",
                 "events": [], "_latest_secret": None}
     cfg = json_value(args.cpa_port, "/v8/management/config", management)
     if not isinstance(cfg, dict):
@@ -124,6 +124,15 @@ def main():
     server = cfg.get("server", {})
     management_cfg = cfg.get("management", {})
     plugins = cfg.get("plugins", {})
+    oauth = cfg.get("oauth", {})
+    # Refuse configured upstream/provider accounts even if the Client Key list
+    # happens to be empty. The auth directory must also be checked by Docker.
+    if (not isinstance(oauth, dict) or
+            oauth.get("auth-dir") != "/runtime/gateway/auth" or
+            oauth.get("providers") not in (None, {}) or
+            cfg.get("api-keys") not in (None, {}) or
+            cfg.get("providers") not in (None, {})):
+        raise StopProof("Non-synthetic provider or OAuth configuration detected")
     if (cfg.get("config-version") != 8 or
             not isinstance(server, dict) or server.get("host") != "127.0.0.1" or
             server.get("port") != 8317 or not isinstance(management_cfg, dict) or
