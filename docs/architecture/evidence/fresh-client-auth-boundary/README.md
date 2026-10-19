@@ -16,6 +16,23 @@ Manager retains its original SQLite, protection key and Runtime token authority.
 
 Current Fresh Ingress still returns **503** for model requests. Manager-staged Key records from #1007 do not prove effective Runtime keys. This network topology experiment intentionally does **not** create a Key verifier, runtime binding or an enabled Gateway.
 
+## Runtime restart recovery — pending live requalification
+
+Independent disposable Docker Desktop evidence for HEAD `3f53958a1b73e7867d663dfa42c9422718842326` revealed a real P2: a standalone `docker compose restart cpamp-runtime` moved Runtime to a new network namespace while Manager/Ingress retained the old namespace. All containers showed Up but the host Ingress endpoint returned an empty reply. Restarting the two consumers restored a shared namespace and Gateway Pending (503), but CPA was offline after its owning Runtime restarted. A stopped CPA is not a positive isolation proof.
+
+This candidate adds **Compose-native `depends_on.restart: true`** for both shared-namespace consumers. It is intended to coordinate an *explicit* `docker compose restart cpamp-runtime` (Compose >= 2.17); **this fix has not yet been live-tested**. It does not cover `docker restart`, `docker compose restart --no-deps`, service restarts performed outside Compose, Docker daemon restarts, or container-runtime automatic restarts. The proof profile has `restart: 'no'` for each service; do not represent an unsupported restart mode as recovered.
+
+For the independent recheck, after bringing up the same disposable project and starting CPA through the existing authorized Fresh Runtime lifecycle:
+
+```sh
+docker compose -p cpamp-fresh-auth-proof -f docker-compose.fresh-auth-proof.yml config
+docker compose -p cpamp-fresh-auth-proof -f docker-compose.fresh-auth-proof.yml restart cpamp-runtime
+```
+
+Record the Compose event output, container restart timestamps, network namespace IDs for **all three** services, and public model request status. Confirm that Ingress and Manager actually rejoined Runtime's new namespace without separate manual restarts; otherwise this P2 is still **FAIL**. Runtime generation changes and the CPA child may be offline after Runtime restart by design: restore the **authorized** CPA lifecycle before retesting *live-process* ingress reachability and untrusted-peer isolation; do not bypass the Runtime gate or treat offline refusals as passing negative evidence. If the authorized re-start is unavailable, mark post-restart *live CPA isolation* **BLOCKED**.
+
+Independently observe external non-local host access when the testing environment allows it. The present candidate's Docker bridge has IPv6 routing disabled; local `::1` checks do not qualify routed IPv6 exposure. Mark unsupported/out-of-profile routed IPv6 **NOT RUN** rather than creating a new network design solely for the experiment.
+
 ## Required real-process evidence — NOT RUN
 
 Use only fresh disposable project volumes, synthetic secrets and a private linux/amd64 Docker host:
