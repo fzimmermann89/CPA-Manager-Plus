@@ -194,7 +194,7 @@
       gap: 7px;
     }
     .window .times {
-      width: 250px;
+      width: 120px;
       max-width: 100%;
       min-width: 0;
     }
@@ -368,7 +368,7 @@
       detail.className = 'window';
       detail.open = openedWindows.has(a.id);
       summary.textContent =
-        'Window' + (schedule.enabled ? ' · ' + (schedule.times || []).join(', ') : '');
+        'Window' + (schedule.enabled ? ' · ' + (schedule.first_start || '') : '');
       detail.append(summary);
       detail.ontoggle = () => {
         if (detail.open) openedWindows.add(a.id);
@@ -380,15 +380,19 @@
       const label = el('label');
       label.append(check, el('span', 'Schedule'));
       times.className = 'times';
-      times.value = (schedule.times || []).join(', ');
-      times.placeholder = '05:00, 10:00, 15:00, 20:00';
-      times.setAttribute('aria-label', 'Daily window start times for ' + a.email);
-      times.title = 'Daily times, separated by commas';
+      times.type = 'time';
+      times.value = schedule.first_start || '';
+
+      times.setAttribute('aria-label', 'First daily start for ' + a.email);
+      times.title = 'First daily start; repeats every 5 hours 1 minute until midnight';
       start.type = 'button';
       start.disabled = a.disabled || !limit(a, 18000);
       start.title = 'Send a minimal request only if the five-hour window has expired';
-      form.append(label, times, el('span', schedule.timezone), save, start);
+      const firstLabel = el('label');
+      firstLabel.append(el('span', 'First start'), times);
+      form.append(label, firstLabel, el('span', schedule.timezone), save, start);
       detail.append(form);
+      if (schedule.times?.length) detail.append(el('small', schedule.times.join(' → ')));
       if (schedule.next_run)
         detail.append(el('small', 'Next ' + new Date(schedule.next_run * 1000).toLocaleString()));
       if (schedule.last_result) detail.append(el('small', schedule.last_result));
@@ -399,10 +403,7 @@
           await api('/api/account/window', 'PUT', {
             id: a.id,
             enabled: check.checked,
-            times: times.value
-              .split(',')
-              .map((t) => t.trim())
-              .filter(Boolean),
+            first_start: times.value,
           });
           notice('Saved.');
           await load();

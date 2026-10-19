@@ -88,11 +88,12 @@ func (s *Service) publicWindows(ctx context.Context) (map[string]any, error) {
 		if a.Provider != "codex" {
 			continue
 		}
-		v := map[string]any{"enabled": false, "times": []string{}, "timezone": settings.Timezone}
+		v := map[string]any{"enabled": false, "times": []string{}, "first_start": "", "timezone": settings.Timezone}
 		for _, x := range settings.Schedules {
 			if x.AccountID == a.ID {
 				v["enabled"] = x.Enabled
 				v["times"] = x.Times
+				v["first_start"] = x.FirstStart
 				v["next_run"] = x.NextRun
 				break
 			}
@@ -174,9 +175,9 @@ func (s *Service) PublicHandler(password string) http.Handler {
 			reply(w, 200, v)
 		case r.URL.Path == "/api/account/window" && r.Method == "PUT":
 			var v struct {
-				ID      string   `json:"id"`
-				Enabled *bool    `json:"enabled"`
-				Times   []string `json:"times"`
+				ID         string `json:"id"`
+				Enabled    *bool  `json:"enabled"`
+				FirstStart string `json:"first_start"`
 			}
 			if !jsonBody(w, r, &v) {
 				return
@@ -190,7 +191,7 @@ func (s *Service) PublicHandler(password string) http.Handler {
 				reply(w, 404, map[string]string{"error": "account not found"})
 				return
 			}
-			if e = s.ConfigureAccountWindow(r.Context(), id, *v.Enabled, v.Times); e != nil {
+			if e = s.ConfigureAccountWindow(r.Context(), id, *v.Enabled, v.FirstStart); e != nil {
 				reply(w, 400, map[string]string{"error": e.Error()})
 				return
 			}

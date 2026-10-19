@@ -274,8 +274,8 @@
       </div>
       <div id="accounts"></div>
       <small
-        >Daily times · Luna / low. Active windows are skipped. Disabled accounts are never
-        started.</small
+        >First daily start, then every 5h 1m until midnight · Luna / low. Active windows are
+        skipped. Disabled accounts are never started.</small
       >
     </div>
   </main>
@@ -332,9 +332,10 @@
         check.setAttribute('aria-label', 'Schedule ' + name.textContent);
         label.append(check, el('span', 'Scheduled'));
         times.className = 'times';
-        times.value = (s?.times || []).join(', ');
-        times.placeholder = '05:00, 10:00, 15:00, 20:00';
-        times.setAttribute('aria-label', 'Daily start times for ' + name.textContent);
+        times.type = 'time';
+        times.value = s?.first_start || '';
+
+        times.setAttribute('aria-label', 'First daily start for ' + name.textContent);
         cell.append(label, times);
         if (s?.next_run)
           cell.append(el('small', 'Next ' + new Date(s.next_run * 1000).toLocaleString()));
@@ -382,11 +383,7 @@
           schedules: [...document.querySelectorAll('.row')].map((row) => ({
             account_id: row.dataset.id,
             enabled: row.querySelector('.enabled').checked,
-            times: row
-              .querySelector('.times')
-              .value.split(',')
-              .map((t) => t.trim())
-              .filter(Boolean),
+            first_start: row.querySelector('.times').value,
             model: 'gpt-6-luna',
             effort: 'low',
           })),

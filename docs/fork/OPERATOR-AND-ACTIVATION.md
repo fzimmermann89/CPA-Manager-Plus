@@ -30,9 +30,9 @@ Serve only; never publish it through the internet gateway or Funnel.
 - `GET /api/accounts`: short account names (email local part), opaque account
   IDs, quota and cached banked-reset count. No domains, OAuth data or file paths.
 - `POST /api/account/status`: exactly `{id, disabled}`.
-- `GET /api/windows`: per-account schedule state, daily times, timezone,
+- `GET /api/windows`: per-account schedule state, first start, generated times, timezone,
   next run and last result, keyed only by opaque account IDs.
-- `PUT /api/account/window`: exactly `{id, enabled, times}`; merges only this
+- `PUT /api/account/window`: exactly `{id, enabled, first_start}`; merges only this
   account's fixed Luna/low schedule and preserves other accounts and run records.
 - `POST /api/account/window/start`: exactly `{id}`; checks live quota and
   starts only an expired five-hour window. Disabled accounts remain skipped.
@@ -57,7 +57,12 @@ accounts that expose only a weekly window.
   management key. This page keeps the key in memory only.
 
 Schedules persist in an atomic 0600 JSON file, using account IDs already in CPA.
-Each selected daily HH:MM slot in the configured IANA timezone checks live quota,
+Set one first daily HH:MM start per account. Later starts follow at elapsed
+5-hour-1-minute intervals until midnight in the configured IANA timezone; the
+next day restarts from the chosen first time. Existing lists migrate from their
+earliest time. No starts wrap into the following day. DST changes preserve the
+elapsed interval; a first time skipped by a spring-forward transition skips that
+day. Each generated slot checks live quota,
 then sends a tiny `gpt-6-luna`/`low` prompt via the native CPA management API
 using the selected auth_index and `$TOKEN$`. Active windows, disabled accounts,
 weekly exhaustion, and accounts without a five-hour window are skipped.

@@ -57,12 +57,13 @@ type Account struct {
 	} `json:"id_token"`
 }
 type Schedule struct {
-	NextRun   int64    `json:"next_run,omitempty"`
-	AccountID string   `json:"account_id"`
-	Enabled   bool     `json:"enabled"`
-	Times     []string `json:"times"`
-	Model     string   `json:"model"`
-	Effort    string   `json:"effort"`
+	FirstStart string   `json:"first_start"`
+	NextRun    int64    `json:"next_run,omitempty"`
+	AccountID  string   `json:"account_id"`
+	Enabled    bool     `json:"enabled"`
+	Times      []string `json:"times"`
+	Model      string   `json:"model"`
+	Effort     string   `json:"effort"`
 }
 type Run struct {
 	Slot   string `json:"slot"`
@@ -99,7 +100,7 @@ func New(resolve Resolve, path string) (*Service, error) {
 	if s.settings.Runs == nil {
 		s.settings.Runs = map[string]Run{}
 	}
-	if err = validate(s.settings); err != nil {
+	if s.settings, err = normalizeSettings(s.settings); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -303,17 +304,16 @@ func (s *Service) Settings() Settings {
 	if loc != nil {
 		now := time.Now().In(loc)
 		for i, x := range v.Schedules {
+			v.Schedules[i].Times = []string{}
+			for _, at := range scheduleStarts(x, now) {
+				v.Schedules[i].Times = append(v.Schedules[i].Times, at.Format("15:04"))
+			}
 			if !x.Enabled {
 				continue
 			}
 			for day := 0; day < 2; day++ {
 				date := now.AddDate(0, 0, day)
-				for _, clock := range x.Times {
-					t, _ := time.Parse("15:04", clock)
-					next := time.Date(date.Year(), date.Month(), date.Day(), t.Hour(), t.Minute(), 0, 0, loc)
-					if next.Format("15:04") != clock {
-						continue
-					}
+				for _, next := range scheduleStarts(x, date) {
 					if next.After(now) && (v.Schedules[i].NextRun == 0 || next.Unix() < v.Schedules[i].NextRun) {
 						v.Schedules[i].NextRun = next.Unix()
 					}
@@ -324,8 +324,10 @@ func (s *Service) Settings() Settings {
 	return v
 }
 func (s *Service) Configure(ctx context.Context, v Settings) error {
-	if e := validate(v); e != nil {
-		return e
+	var err error
+	v, err = normalizeSettings(v)
+	if err != nil {
+		return err
 	}
 	list, e := s.accounts(ctx)
 	if e != nil {
@@ -358,23 +360,6 @@ func (s *Service) Configure(ctx context.Context, v Settings) error {
 	return e
 }
 
-// latestSlot ignores missed schedules older than ten minutes. No catch-up burst
-// after downtime or clock jumps. Local date/time makes fall-back DST run once.
-func latestSlot(now time.Time, times []string) (string, time.Time, bool) {
-	sorted := append([]string(nil), times...)
-	sort.Strings(sorted)
-	for i := len(sorted) - 1; i >= 0; i-- {
-		t, _ := time.Parse("15:04", sorted[i])
-		slot := time.Date(now.Year(), now.Month(), now.Day(), t.Hour(), t.Minute(), 0, 0, now.Location())
-		if slot.Format("15:04") != sorted[i] {
-			continue
-		}
-		if !now.Before(slot) && now.Sub(slot) < 10*time.Minute {
-			return now.Format("2006-01-02") + "T" + sorted[i], slot, true
-		}
-	}
-	return "", time.Time{}, false
-}
 func (s *Service) record(id, slot, result string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -467,7 +452,7 @@ func (s *Service) Tick(ctx context.Context, now time.Time) {
 		if !x.Enabled {
 			continue
 		}
-		slot, at, ok := latestSlot(now, x.Times)
+		slot, at, ok := latestScheduleSlot(now, x)
 		if !ok || v.Runs[x.AccountID].Slot == slot {
 			continue
 		}
@@ -553,7 +538,7 @@ func validRequestID(id string) bool {
 
 // ConfigureAccountWindow changes only one account's fixed-model schedule.
 // Merge under the same locks as the scheduler to preserve other accounts/runs.
-func (s *Service) ConfigureAccountWindow(ctx context.Context, id string, enabled bool, times []string) error {
+func (s *Service) ConfigureAccountWindow(ctx context.Context, id string, enabled bool, firstStart string) error {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	a, err := s.find(ctx, id)
@@ -563,14 +548,18 @@ func (s *Service) ConfigureAccountWindow(ctx context.Context, id string, enabled
 	if a.Provider != "codex" {
 		return errors.New("Codex account required")
 	}
-	if enabled && len(times) == 0 {
-		return errors.New("add at least one daily time")
+	times, err := dailyTimes(firstStart)
+	if err != nil {
+		return err
+	}
+	if enabled && firstStart == "" {
+		return errors.New("choose the first daily start")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := s.settings
 	v.Schedules = append([]Schedule(nil), s.settings.Schedules...)
-	schedule := Schedule{AccountID: id, Enabled: enabled, Times: times, Model: "gpt-6-luna", Effort: "low"}
+	schedule := Schedule{AccountID: id, Enabled: enabled, FirstStart: firstStart, Times: times, Model: "gpt-6-luna", Effort: "low"}
 	found := false
 	for i, x := range v.Schedules {
 		if x.AccountID == id {
@@ -591,4 +580,77 @@ func (s *Service) ConfigureAccountWindow(ctx context.Context, id string, enabled
 		s.settings = old
 	}
 	return err
+}
+
+// dailyTimes is the ordinary-day preview; scheduleStarts uses elapsed intervals
+// in the configured timezone, including days when daylight saving changes.
+func dailyTimes(first string) ([]string, error) {
+	out := []string{}
+	if first == "" {
+		return out, nil
+	}
+	t, err := time.Parse("15:04", first)
+	if err != nil || t.Format("15:04") != first {
+		return nil, errors.New("first start must be HH:MM")
+	}
+	for minute := t.Hour()*60 + t.Minute(); minute < 24*60; minute += 301 {
+		out = append(out, fmt.Sprintf("%02d:%02d", minute/60, minute%60))
+	}
+	return out, nil
+}
+func normalizeSettings(v Settings) (Settings, error) {
+	if err := validate(v); err != nil {
+		return v, err
+	}
+	v.Schedules = append([]Schedule{}, v.Schedules...)
+	for i, x := range v.Schedules {
+		first := x.FirstStart
+		// Existing schedules migrate from their earliest daily time.
+		if first == "" && len(x.Times) > 0 {
+			times := append([]string(nil), x.Times...)
+			sort.Strings(times)
+			first = times[0]
+		}
+		times, err := dailyTimes(first)
+		if err != nil {
+			return v, err
+		}
+		if x.Enabled && first == "" {
+			return v, errors.New("choose the first daily start")
+		}
+		v.Schedules[i].FirstStart = first
+		v.Schedules[i].Times = times
+	}
+	return v, nil
+}
+func scheduleStarts(x Schedule, day time.Time) []time.Time {
+	first := x.FirstStart
+	if first == "" && len(x.Times) > 0 {
+		times := append([]string(nil), x.Times...)
+		sort.Strings(times)
+		first = times[0]
+	}
+	clock, err := time.Parse("15:04", first)
+	if err != nil {
+		return nil
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), clock.Hour(), clock.Minute(), 0, 0, day.Location())
+	if start.Format("15:04") != first {
+		return nil
+	}
+	out := []time.Time{}
+	for next := start; next.Year() == day.Year() && next.YearDay() == day.YearDay(); next = next.Add(301 * time.Minute) {
+		out = append(out, next)
+	}
+	return out
+}
+func latestScheduleSlot(now time.Time, x Schedule) (string, time.Time, bool) {
+	starts := scheduleStarts(x, now)
+	for i := len(starts) - 1; i >= 0; i-- {
+		at := starts[i]
+		if !now.Before(at) && now.Sub(at) < 10*time.Minute {
+			return at.Format("2006-01-02T15:04"), at, true
+		}
+	}
+	return "", time.Time{}, false
 }

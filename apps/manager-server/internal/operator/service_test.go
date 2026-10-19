@@ -77,6 +77,7 @@ func TestActivationTargetsOneAccountAndPersistsSlot(t *testing.T) {
 	// Use the current UTC slot so this test is independent of the host timezone.
 	v := s.Settings()
 	v.Schedules[0].Times = []string{now.UTC().Format("15:04")}
+	v.Schedules[0].FirstStart = now.UTC().Format("15:04")
 	if e := s.Configure(context.Background(), v); e != nil {
 		t.Fatal(e)
 	}
@@ -116,11 +117,11 @@ func TestValidationAndMissedSlots(t *testing.T) {
 		}
 	}
 	now := time.Date(2026, 10, 19, 5, 15, 0, 0, time.UTC)
-	if _, _, ok := latestSlot(now, []string{"05:00"}); ok {
+	if _, _, ok := latestScheduleSlot(now, Schedule{FirstStart: "05:00"}); ok {
 		t.Fatal("missed schedule caught up")
 	}
 	loc, _ := time.LoadLocation("Europe/Berlin")
-	if _, _, ok := latestSlot(time.Date(2026, 10, 19, 5, 1, 0, 0, loc), []string{"05:00"}); !ok {
+	if _, _, ok := latestScheduleSlot(time.Date(2026, 10, 19, 5, 1, 0, 0, loc), Schedule{FirstStart: "05:00"}); !ok {
 		t.Fatal("timezone slot missing")
 	}
 }
@@ -208,7 +209,7 @@ func TestAdminAndHubRestrictions(t *testing.T) {
 func TestSpringForwardSlotIsSkipped(t *testing.T) {
 	loc, _ := time.LoadLocation("Europe/Berlin")
 	now := time.Date(2026, 3, 29, 3, 1, 0, 0, loc)
-	if _, _, ok := latestSlot(now, []string{"02:00"}); ok {
+	if _, _, ok := latestScheduleSlot(now, Schedule{FirstStart: "02:00"}); ok {
 		t.Fatal("nonexistent spring-forward time was executed")
 	}
 }
@@ -333,7 +334,7 @@ func TestPublicPerAccountWindows(t *testing.T) {
 	if w := request("GET", "/api/windows", "", "", false); w.Code != 401 {
 		t.Fatal("anonymous windows", w.Code)
 	}
-	body := `{"id":"` + publicID("a") + `","enabled":true,"times":["05:00","10:00"]}`
+	body := `{"id":"` + publicID("a") + `","enabled":true,"first_start":"05:00"}`
 	if w := request("PUT", "/api/account/window", body, "https://evil.test", true); w.Code != 403 {
 		t.Fatal("window CSRF allowed", w.Code)
 	}
@@ -350,7 +351,7 @@ func TestPublicPerAccountWindows(t *testing.T) {
 	if w := request("GET", "/api/windows", "", "", true); w.Code != 200 || strings.Contains(w.Body.String(), `"account_id"`) || strings.Contains(w.Body.String(), "@") || !strings.Contains(w.Body.String(), publicID("a")) {
 		t.Fatal("public window DTO", w.Code, w.Body.String())
 	}
-	for _, bad := range []string{`{"id":"` + publicID("a") + `","enabled":true,"times":[]}`, `{"id":"` + publicID("a") + `","enabled":true,"times":["25:00"]}`} {
+	for _, bad := range []string{`{"id":"` + publicID("a") + `","enabled":true,"first_start":""}`, `{"id":"` + publicID("a") + `","enabled":true,"first_start":"25:00"}`} {
 		if w := request("PUT", "/api/account/window", bad, "", true); w.Code != 400 {
 			t.Fatal("invalid times allowed", w.Code)
 		}
@@ -365,5 +366,42 @@ func TestPublicPerAccountWindows(t *testing.T) {
 	}
 	if w := request("GET", "/api/settings", "", "", true); w.Code != 404 {
 		t.Fatal("general config became public")
+	}
+}
+
+func TestFirstDailyStartAndFiveHourOneMinuteCadence(t *testing.T) {
+	for _, tc := range []struct{ first, want string }{{"05:00", "05:00,10:01,15:02,20:03"}, {"00:00", "00:00,05:01,10:02,15:03,20:04"}, {"18:59", "18:59"}, {"18:58", "18:58,23:59"}, {"23:59", "23:59"}} {
+		got, err := dailyTimes(tc.first)
+		if err != nil || strings.Join(got, ",") != tc.want {
+			t.Fatalf("%s: %v, %v", tc.first, got, err)
+		}
+	}
+	s, _ := mockService(t)
+	if err := s.ConfigureAccountWindow(context.Background(), "a", true, "05:00"); err != nil {
+		t.Fatal(err)
+	}
+	v := s.Settings()
+	if v.Schedules[0].FirstStart != "05:00" || strings.Join(v.Schedules[0].Times, ",") != "05:00,10:01,15:02,20:03" {
+		t.Fatal(v.Schedules)
+	}
+	reloaded, err := New(s.resolve, s.path)
+	if err != nil || reloaded.Settings().Schedules[0].FirstStart != "05:00" {
+		t.Fatal("first start not persisted", err)
+	}
+	migrated, err := normalizeSettings(Settings{Timezone: "UTC", Schedules: []Schedule{{AccountID: "a", Enabled: true, Times: []string{"15:00", "05:00", "10:00"}, Model: "gpt-6-luna", Effort: "low"}}})
+	if err != nil || migrated.Schedules[0].FirstStart != "05:00" || strings.Join(migrated.Schedules[0].Times, ",") != "05:00,10:01,15:02,20:03" {
+		t.Fatal("legacy migration", migrated, err)
+	}
+	loc, _ := time.LoadLocation("Europe/Berlin")
+	for _, day := range []time.Time{time.Date(2026, 3, 29, 0, 0, 0, 0, loc), time.Date(2026, 10, 25, 0, 0, 0, 0, loc)} {
+		starts := scheduleStarts(Schedule{FirstStart: "00:00"}, day)
+		for i, at := range starts {
+			if at.YearDay() != day.YearDay() {
+				t.Fatal("wrapped into next day")
+			}
+			if i > 0 && at.Sub(starts[i-1]) != 301*time.Minute {
+				t.Fatal("DST changed elapsed cadence")
+			}
+		}
 	}
 }
