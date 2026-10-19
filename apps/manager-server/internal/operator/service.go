@@ -513,6 +513,11 @@ func (s *Service) ConsumeReset(ctx context.Context, id, requestID string) (strin
 	}
 	switch out.Code {
 	case "reset", "already_redeemed":
+		// Restored provider quota does not invalidate CPA's cached routing ban.
+		// Clear only this account after an explicit, confirmed redemption.
+		if err := s.call(ctx, "POST", "reset-quota", map[string]string{"auth_index": a.Index}, nil); err != nil {
+			return "", errors.New("banked reset applied, but proxy cooldown could not be cleared; retry with the same redemption ID")
+		}
 		return out.Code, nil
 	default:
 		return "", errors.New("reset not confirmed; refresh before retrying")

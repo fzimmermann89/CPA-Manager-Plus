@@ -39,6 +39,10 @@ Serve only; never publish it through the internet gateway or Funnel.
 - `POST /api/account/reset`: exactly `{id, request_id}`. `request_id` is a UUID.
   Posts one explicit redemption to the fixed upstream reset-consume endpoint
   using the selected account's existing CPA auth. No automatic resets/retries.
+  A confirmed `reset` or `already_redeemed` also clears only that account's
+  native CPA routing cooldown, so restored quota can be used immediately.
+  A cooldown-clear failure reports that redemption succeeded and retains the
+  UUID for a safe retry.
   The browser confirms spending, then reuses the same UUID after an uncertain
   response. Do not create a new attempt after a network error without checking
   quota. Actual upstream outcomes remain authoritative.

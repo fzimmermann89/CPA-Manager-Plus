@@ -260,9 +260,26 @@ func TestPasswordOnlySessionAndIdentity(t *testing.T) {
 }
 func TestBankedResetUsesOnlySelectedAccountAndUUID(t *testing.T) {
 	calls := 0
+	clears := 0
+	code := "reset"
+	clearFailure := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v0/management/auth-files" {
 			_, _ = w.Write([]byte(`{"files":[{"id":"a","name":"a.json","auth_index":"index-a","provider":"codex"}]}`))
+			return
+		}
+		if r.URL.Path == "/v0/management/reset-quota" {
+			var data map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&data)
+			if len(data) != 1 || data["auth_index"] != "index-a" {
+				t.Error("wrong cooldown target", data)
+			}
+			clears++
+			if clearFailure {
+				w.WriteHeader(500)
+				return
+			}
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
 			return
 		}
 		if r.URL.Path != "/v0/management/api-call" {
@@ -284,7 +301,7 @@ func TestBankedResetUsesOnlySelectedAccountAndUUID(t *testing.T) {
 			t.Error("wrong redemption payload", v.Data)
 		}
 		calls++
-		_ = json.NewEncoder(w).Encode(map[string]any{"status_code": 200, "body": `{"code":"reset"}`})
+		_ = json.NewEncoder(w).Encode(map[string]any{"status_code": 200, "body": `{"code":"` + code + `"}`})
 	}))
 	defer upstream.Close()
 	s, e := New(func(context.Context) (Connection, error) { return Connection{URL: upstream.URL, Key: "secret"}, nil }, filepath.Join(t.TempDir(), "settings.json"))
@@ -307,8 +324,21 @@ func TestBankedResetUsesOnlySelectedAccountAndUUID(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != 200 || calls != 1 {
+	if w.Code != 200 || calls != 1 || clears != 1 {
 		t.Fatal("reset failed", w.Code, calls)
+	}
+	code = "already_redeemed"
+	if _, err := s.ConsumeReset(context.Background(), "a", "12345678-1234-1234-1234-123456789abc"); err != nil || clears != 2 {
+		t.Fatal("retry did not clear stale cooldown", err, clears)
+	}
+	code = "unknown"
+	if _, err := s.ConsumeReset(context.Background(), "a", "12345678-1234-1234-1234-123456789abc"); err == nil || clears != 2 {
+		t.Fatal("unconfirmed reset cleared cooldown", err, clears)
+	}
+	code = "reset"
+	clearFailure = true
+	if _, err := s.ConsumeReset(context.Background(), "a", "12345678-1234-1234-1234-123456789abc"); err == nil || !strings.Contains(err.Error(), "banked reset applied") {
+		t.Fatal("lost successful redemption warning", err)
 	}
 }
 
