@@ -144,12 +144,16 @@ func TestMatchStagedSecretDoesNotGrantRuntimeAuthorization(t *testing.T) {
 	if err != nil || !created {
 		t.Fatal("cannot create staged key", err)
 	}
+	last := "0"
+	if strings.HasSuffix(first.CreatedSecret, "0") {
+		last = "1"
+	}
 	for _, v := range []struct {
 		secret string
 		want   bool
 	}{
 		{first.CreatedSecret, true},
-		{first.CreatedSecret[:len(first.CreatedSecret)-1] + "0", false},
+		{first.CreatedSecret[:len(first.CreatedSecret)-1] + last, false},
 		{"cpamp_sk_" + strings.Repeat("0", 64), false},
 		{"", false},
 	} {
