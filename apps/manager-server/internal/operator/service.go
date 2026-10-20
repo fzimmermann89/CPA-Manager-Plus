@@ -90,6 +90,13 @@ type Service struct {
 	cacheAt    time.Time
 	recoveryMu sync.Mutex
 	recovery   map[string]recoveryState
+	device     *deviceLoginManager
+}
+
+// ConfigureDeviceLogin enables the narrow Codex device authorization action.
+// Both paths are deployment-owned absolute paths, never caller input.
+func (s *Service) ConfigureDeviceLogin(binary, config string) {
+	s.device = newDeviceLoginManager(binary, config)
 }
 
 func New(resolve Resolve, path string) (*Service, error) {

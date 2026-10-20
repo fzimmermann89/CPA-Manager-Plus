@@ -63,6 +63,7 @@ func main() {
 	if e != nil {
 		log.Fatal(e)
 	}
+	s.ConfigureDeviceLogin(required("CPA_DEVICE_LOGIN_BINARY"), required("CPA_DEVICE_LOGIN_CONFIG"))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	s.Start(ctx)

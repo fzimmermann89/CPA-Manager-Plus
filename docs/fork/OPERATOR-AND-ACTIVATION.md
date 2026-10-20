@@ -14,7 +14,9 @@ CPA_KEY_FILE=/private/existing-cpa-management-key \
 CPA_ADMIN_ADDR=127.0.0.1:18330 \
 CPA_OPERATOR_ADDR=127.0.0.1:18331 \
 CPA_OPERATOR_PASSWORD_FILE=/private/operator-password \
-CPA_ACTIVATION_FILE=/private/window-activation.json ./cpa-operator
+CPA_ACTIVATION_FILE=/private/window-activation.json \
+CPA_DEVICE_LOGIN_BINARY=/path/to/cli-proxy-api \
+CPA_DEVICE_LOGIN_CONFIG=/private/pool-config.yaml ./cpa-operator
 ```
 
 All listeners and the CPA upstream must use loopback IPs. Publish only the
@@ -46,6 +48,13 @@ Serve only; never publish it through the internet gateway or Funnel.
   The browser confirms spending, then reuses the same UUID after an uncertain
   response. Do not create a new attempt after a network error without checking
   quota. Actual upstream outcomes remain authoritative.
+- `POST /api/codex/device/start`: exactly `{mode, account_id}`. `mode` is `add`
+  or `reauthorize`; reauthorization requires one unique existing Codex email.
+  The companion launches only the configured CLIProxyAPI device-login command
+  for this pool. `GET /api/codex/device/status?id=...` returns the short-lived
+  device code and coarse status, never process output or saved tokens. One flow
+  runs per pool and expires after 15 minutes. The public operator password
+  authorizes this credential change and must be kept private.
 
 Mutations require same-origin JSON and reject unknown fields. Machine clients
 may send the operator password as a Bearer token instead of a cookie. Neither

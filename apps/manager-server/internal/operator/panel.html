@@ -181,6 +181,10 @@
       color: var(--muted);
       width: fit-content;
     }
+    #device { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
+    #device h2 { font-size: 17px; margin: 0 0 6px; }
+    #device-flow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .device-code { font-size: 20px; letter-spacing: .08em; }
     .window form {
       display: flex;
       align-items: center;
@@ -279,6 +283,12 @@
         ><span>Banked resets</span>
       </div>
       <div id="accounts"></div>
+      <section id="device">
+        <h2>Codex device login</h2>
+        <p>Add an account with a one-time device code. To refresh an existing account, choose Reauthorize on that account. Logging into an identity already in this pool may refresh that credential.</p>
+        <button id="add-codex" type="button">Add Codex account</button>
+        <div id="device-flow" aria-live="polite"></div>
+      </section>
     </section>
   </main>
   <script>
@@ -297,6 +307,42 @@
     function notice(text = '', error = false) {
       q('#notice').textContent = text;
       q('#notice').classList.toggle('error', error);
+    }
+    let deviceTimer;
+    async function startDevice(mode, account) {
+      if (deviceTimer) clearInterval(deviceTimer);
+      const box = q('#device-flow');
+      box.replaceChildren(el('p', 'Starting Codex device login…'));
+      try {
+        const job = await api('/api/codex/device/start', 'POST', { mode, account_id: account || '' });
+        const link = el('a', 'Open OpenAI device login');
+        link.href = 'https://auth.openai.com/codex/device';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        const code = el('strong', job.code || 'Waiting for code…');
+        code.className = 'device-code';
+        box.replaceChildren(el('p', mode === 'add' ? 'Add account' : 'Reauthorize selected account'), link, code);
+        const poll = async () => {
+          try {
+            const state = await api('/api/codex/device/status?id=' + encodeURIComponent(job.id));
+            if (state.code) code.textContent = state.code;
+            if (state.status === 'complete' || state.status === 'failed') {
+              clearInterval(deviceTimer);
+              deviceTimer = undefined;
+              box.append(el('p', state.message || state.status));
+              if (state.status === 'complete') await load();
+            }
+          } catch (e) {
+            clearInterval(deviceTimer);
+            deviceTimer = undefined;
+            box.append(el('p', e.message));
+          }
+        };
+        deviceTimer = setInterval(poll, 2500);
+        await poll();
+      } catch (e) {
+        box.replaceChildren(el('p', e.message));
+      }
     }
     function unlocked(ok) {
       q('#login').hidden = ok;
@@ -456,6 +502,15 @@
           }
         };
         identity.append(toggle, name);
+        if (a.provider === 'codex') {
+          const reauth = el('button', 'Reauthorize');
+          reauth.type = 'button';
+          reauth.title = 'Refresh credentials for ' + name.textContent;
+          reauth.onclick = () => {
+            if (confirm('Reauthorize ' + name.textContent + ' using Codex device login?')) startDevice('reauthorize', a.id);
+          };
+          identity.append(reauth);
+        }
         if (a.disabled) name.append(el('small', 'Disabled'));
         else if (a.quota_error) name.append(el('small', 'Quota unavailable'));
         row.append(
@@ -545,6 +600,7 @@
       notice();
       load();
     };
+    q('#add-codex').onclick = () => startDevice('add');
     q('#logout').onclick = async () => {
       try {
         await api('/api/logout', 'POST', {});

@@ -159,6 +159,27 @@ func (s *Service) PublicHandler(password string) http.Handler {
 			return
 		}
 		switch {
+		case r.URL.Path == "/api/codex/device/start" && r.Method == "POST":
+			var v struct {
+				Mode      string `json:"mode"`
+				AccountID string `json:"account_id"`
+			}
+			if !jsonBody(w, r, &v) {
+				return
+			}
+			job, e := s.device.start(r.Context(), s, v.Mode, v.AccountID)
+			if e != nil {
+				reply(w, 400, map[string]string{"error": e.Error()})
+				return
+			}
+			reply(w, 200, job)
+		case r.URL.Path == "/api/codex/device/status" && r.Method == "GET":
+			job, e := s.device.status(r.URL.Query().Get("id"))
+			if e != nil {
+				reply(w, 404, map[string]string{"error": e.Error()})
+				return
+			}
+			reply(w, 200, job)
 		case r.URL.Path == "/api/accounts" && r.Method == "GET":
 			list, e := s.Accounts(r.Context())
 			if e != nil {
