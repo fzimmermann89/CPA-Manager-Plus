@@ -182,7 +182,6 @@
       width: fit-content;
     }
     #device { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
-    #device h2 { font-size: 17px; margin: 0 0 6px; }
     #device-flow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
     .device-code { font-size: 20px; letter-spacing: .08em; }
     .window form {
@@ -264,7 +263,6 @@
   </style>
   <main>
     <header>
-      <h1 id="title">Accounts</h1>
       <button id="refresh" hidden>Refresh</button><button id="logout" hidden>Log out</button>
     </header>
     <form id="login" hidden>
@@ -284,8 +282,6 @@
       </div>
       <div id="accounts"></div>
       <section id="device">
-        <h2>Codex device login</h2>
-        <p>Add an account with a one-time device code. To refresh an existing account, choose Reauthorize on that account. Logging into an identity already in this pool may refresh that credential.</p>
         <button id="add-codex" type="button">Add Codex account</button>
         <div id="device-flow" aria-live="polite"></div>
       </section>
@@ -298,7 +294,6 @@
       pending = new Map();
     let windows = {};
     const openedWindows = new Set();
-    q('#title').textContent = base.endsWith('/job') ? 'Job accounts' : 'Private accounts';
     function el(tag, text) {
       const n = document.createElement(tag);
       if (text !== undefined) n.textContent = text;
@@ -312,7 +307,7 @@
     async function startDevice(mode, account) {
       if (deviceTimer) clearInterval(deviceTimer);
       const box = q('#device-flow');
-      box.replaceChildren(el('p', 'Starting Codex device login…'));
+      box.replaceChildren(el('p', 'Starting…'));
       try {
         const job = await api('/api/codex/device/start', 'POST', { mode, account_id: account || '' });
         const link = el('a', 'Open OpenAI device login');
@@ -503,9 +498,24 @@
         };
         identity.append(toggle, name);
         if (a.provider === 'codex') {
-          const reauth = el('button', 'Reauthorize');
+          const reauth = el('button');
           reauth.type = 'button';
           reauth.title = 'Refresh credentials for ' + name.textContent;
+          reauth.setAttribute('aria-label', reauth.title);
+          const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          icon.setAttribute('viewBox', '0 0 24 24');
+          icon.setAttribute('width', '18');
+          icon.setAttribute('height', '18');
+          icon.setAttribute('aria-hidden', 'true');
+          icon.setAttribute('fill', 'none');
+          icon.setAttribute('stroke', 'currentColor');
+          icon.setAttribute('stroke-width', '2');
+          icon.setAttribute('stroke-linecap', 'round');
+          icon.setAttribute('stroke-linejoin', 'round');
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          path.setAttribute('d', 'M20 11a8 8 0 1 1-2.34-5.66L20 8m0-5v5h-5');
+          icon.append(path);
+          reauth.append(icon);
           reauth.onclick = () => {
             if (confirm('Reauthorize ' + name.textContent + ' using Codex device login?')) startDevice('reauthorize', a.id);
           };
