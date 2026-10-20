@@ -27,6 +27,7 @@ type DeviceLogin struct {
 	cmd         *exec.Cmd
 	before      map[string]bool
 	beforeCount int
+	targetID    string
 }
 
 type deviceLoginManager struct {
@@ -97,10 +98,13 @@ func (d *deviceLoginManager) start(ctx context.Context, s *Service, mode, accoun
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.active != nil && d.active.Status == "waiting" {
-		return DeviceLogin{}, errors.New("a device login is already running")
+		if d.active.Mode == mode && d.active.targetID == target.ID {
+			return *d.active, nil
+		}
+		return DeviceLogin{}, errors.New("another account login is already running")
 	}
 	jobCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	job := &DeviceLogin{ID: id, Mode: mode, Status: "starting", StartedAt: time.Now().UTC(), before: before, beforeCount: len(before)}
+	job := &DeviceLogin{ID: id, Mode: mode, Status: "starting", StartedAt: time.Now().UTC(), before: before, beforeCount: len(before), targetID: target.ID}
 	job.cmd = exec.CommandContext(jobCtx, d.bin, "-config", d.config, "-codex-device-login", "-no-browser")
 	stdout, err := job.cmd.StdoutPipe()
 	if err != nil {

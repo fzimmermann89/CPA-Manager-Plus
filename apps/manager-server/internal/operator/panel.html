@@ -126,6 +126,22 @@
       gap: 10px;
       min-width: 0;
     }
+    .reauth {
+      box-sizing: border-box;
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      min-height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 0;
+      flex: 0 0 32px;
+    }
+    .reauth svg {
+      display: block;
+    }
     .name {
       font-weight: 600;
       overflow-wrap: anywhere;
@@ -172,6 +188,11 @@
       font-size: 13px;
       min-height: 36px;
     }
+    .reset-expiries {
+      flex-basis: 100%;
+      margin-left: 20px;
+      line-height: 1.3;
+    }
     .window {
       grid-column: 1/-1;
       font-size: 13px;
@@ -181,9 +202,42 @@
       color: var(--muted);
       width: fit-content;
     }
-    #device { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
-    #device-flow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .device-code { font-size: 20px; letter-spacing: .08em; }
+    #device {
+      margin-top: 28px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+    #device-dialog {
+      width: 360px;
+      max-width: calc(100vw - 32px);
+      max-height: calc(100dvh - 32px);
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--field);
+      color: var(--text);
+    }
+    #device-dialog::backdrop {
+      background: #0006;
+    }
+    #device-flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+    }
+    #device-flow p {
+      margin: 0;
+    }
+    #close-device {
+      display: block;
+      margin: 20px auto 0;
+    }
+    .device-code {
+      font-size: 20px;
+      letter-spacing: 0.08em;
+    }
     .window form {
       display: flex;
       align-items: center;
@@ -283,9 +337,12 @@
       <div id="accounts"></div>
       <section id="device">
         <button id="add-codex" type="button">Add Codex account</button>
-        <div id="device-flow" aria-live="polite"></div>
       </section>
     </section>
+    <dialog id="device-dialog" aria-label="Codex account login">
+      <div id="device-flow" aria-live="polite"></div>
+      <button id="close-device" type="button">Close</button>
+    </dialog>
   </main>
   <script>
     'use strict';
@@ -308,15 +365,24 @@
       if (deviceTimer) clearInterval(deviceTimer);
       const box = q('#device-flow');
       box.replaceChildren(el('p', 'Starting…'));
+      const dialog = q('#device-dialog');
+      if (!dialog.open) dialog.showModal();
       try {
-        const job = await api('/api/codex/device/start', 'POST', { mode, account_id: account || '' });
+        const job = await api('/api/codex/device/start', 'POST', {
+          mode,
+          account_id: account || '',
+        });
         const link = el('a', 'Open OpenAI device login');
         link.href = 'https://auth.openai.com/codex/device';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         const code = el('strong', job.code || 'Waiting for code…');
         code.className = 'device-code';
-        box.replaceChildren(el('p', mode === 'add' ? 'Add account' : 'Reauthorize selected account'), link, code);
+        box.replaceChildren(
+          el('p', mode === 'add' ? 'Add account' : 'Reauthorize account'),
+          code,
+          link
+        );
         const poll = async () => {
           try {
             const state = await api('/api/codex/device/status?id=' + encodeURIComponent(job.id));
@@ -339,7 +405,13 @@
         box.replaceChildren(el('p', e.message));
       }
     }
+    q('#close-device').onclick = () => q('#device-dialog').close();
     function unlocked(ok) {
+      if (!ok) {
+        q('#device-dialog').close();
+        if (deviceTimer) clearInterval(deviceTimer);
+        deviceTimer = undefined;
+      }
       q('#login').hidden = ok;
       q('#content').hidden = !ok;
       q('#refresh').hidden = !ok;
@@ -500,6 +572,7 @@
         if (a.provider === 'codex') {
           const reauth = el('button');
           reauth.type = 'button';
+          reauth.className = 'reauth';
           reauth.title = 'Refresh credentials for ' + name.textContent;
           reauth.setAttribute('aria-label', reauth.title);
           const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -512,12 +585,17 @@
           icon.setAttribute('stroke-width', '2');
           icon.setAttribute('stroke-linecap', 'round');
           icon.setAttribute('stroke-linejoin', 'round');
-          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          path.setAttribute('d', 'M20 11a8 8 0 1 1-2.34-5.66L20 8m0-5v5h-5');
-          icon.append(path);
+          const bow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          bow.setAttribute('cx', '8');
+          bow.setAttribute('cy', '12');
+          bow.setAttribute('r', '4');
+          const shaft = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          shaft.setAttribute('d', 'M12 12h9m-3 0v3m-3-3v2');
+          icon.append(bow, shaft);
           reauth.append(icon);
           reauth.onclick = () => {
-            if (confirm('Reauthorize ' + name.textContent + ' using Codex device login?')) startDevice('reauthorize', a.id);
+            if (confirm('Reauthorize ' + name.textContent + ' using Codex device login?'))
+              startDevice('reauthorize', a.id);
           };
           identity.append(reauth);
         }
@@ -532,7 +610,6 @@
           count = a.quota?.rate_limit_reset_credits?.available_count;
         resets.className = 'resets';
         const text = el('span', count === undefined ? '—' : String(count));
-        text.title = 'Available banked resets';
         text.setAttribute(
           'aria-label',
           count === undefined ? 'Banked resets unavailable' : count + ' banked resets'
@@ -570,6 +647,25 @@
           }
         };
         resets.append(text, use);
+        const credits = a.quota?.rate_limit_reset_credits?.credits || [];
+        const expiries = credits
+          .map((credit) => (credit.expires_at ? new Date(credit.expires_at) : null))
+          .filter((date) => date === null || Number.isFinite(date.getTime()))
+          .sort((left, right) => (left?.getTime() || Infinity) - (right?.getTime() || Infinity));
+        if (expiries.length) {
+          const formatExpiry = (date) =>
+            date
+              ? date.toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : 'No expiry';
+          const expiryText = el('small', 'Expires ' + expiries.map(formatExpiry).join(' · '));
+          expiryText.className = 'reset-expiries';
+          resets.append(expiryText);
+        }
         row.append(resets);
         if (a.provider === 'codex') row.append(windowControls(a));
         body.append(row);

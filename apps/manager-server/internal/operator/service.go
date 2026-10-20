@@ -30,7 +30,11 @@ type Limits struct {
 	Secondary *Window `json:"secondary_window"`
 }
 type ResetCredits struct {
-	Available int `json:"available_count"`
+	Available int           `json:"available_count"`
+	Credits   []ResetCredit `json:"credits,omitempty"`
+}
+type ResetCredit struct {
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 type Quota struct {
 	Resets *ResetCredits `json:"rate_limit_reset_credits,omitempty"`
@@ -192,13 +196,27 @@ func (s *Service) quota(ctx context.Context, a Account) (*Quota, error) {
 	if err = json.Unmarshal([]byte(raw), &q); err != nil {
 		return nil, errors.New("invalid provider quota")
 	}
-	if q.Resets == nil {
+	if q.Resets == nil || q.Resets.Available > 0 {
 		if raw, err := s.provider(ctx, a, "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits", "GET", nil); err == nil {
-			var credits struct {
+			var details struct {
 				Available *int `json:"available_count"`
+				Credits   []struct {
+					Status    string     `json:"status"`
+					ResetType string     `json:"reset_type"`
+					ExpiresAt *time.Time `json:"expires_at"`
+				} `json:"credits"`
 			}
-			if json.Unmarshal([]byte(raw), &credits) == nil && credits.Available != nil {
-				q.Resets = &ResetCredits{Available: *credits.Available}
+			if json.Unmarshal([]byte(raw), &details) == nil {
+				if q.Resets == nil && details.Available != nil {
+					q.Resets = &ResetCredits{Available: *details.Available}
+				}
+				if q.Resets != nil {
+					for _, credit := range details.Credits {
+						if credit.Status == "available" && (credit.ResetType == "" || credit.ResetType == "codex_rate_limits") {
+							q.Resets.Credits = append(q.Resets.Credits, ResetCredit{ExpiresAt: credit.ExpiresAt})
+						}
+					}
+				}
 			}
 		}
 	}

@@ -53,7 +53,11 @@ Serve only; never publish it through the internet gateway or Funnel.
   The companion launches only the configured CLIProxyAPI device-login command
   for this pool. `GET /api/codex/device/status?id=...` returns the short-lived
   device code and coarse status, never process output or saved tokens. One flow
-  runs per pool and expires after 15 minutes. The public operator password
+  runs per pool and expires after 15 minutes. Repeating the same action for the
+  same account resumes its pending code; a different account cannot take over
+  that flow. Codes, progress and errors appear in a native modal dialog so they
+  remain visible at phone widths rather than below the account list.
+  The public operator password
   authorizes this credential change and must be kept private.
 
 Mutations require same-origin JSON and reject unknown fields. Machine clients
