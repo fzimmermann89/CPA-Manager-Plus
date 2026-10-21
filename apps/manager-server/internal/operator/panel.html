@@ -2,6 +2,7 @@
 <html lang="en">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="auth-owner" content="__AUTH_OWNER__" />
   <title>Accounts</title>
   <style>
     :root {
@@ -361,6 +362,13 @@
       q('#notice').classList.toggle('error', error);
     }
     let deviceTimer;
+    const authOwner = document.querySelector('meta[name="auth-owner"]').content;
+    if (authOwner) {
+      const link = document.createElement('a');
+      link.href = authOwner;
+      link.textContent = 'Manage account logins';
+      q('#add-codex').replaceWith(link);
+    }
     async function startDevice(mode, account) {
       if (deviceTimer) clearInterval(deviceTimer);
       const box = q('#device-flow');
@@ -594,6 +602,10 @@
           icon.append(bow, shaft);
           reauth.append(icon);
           reauth.onclick = () => {
+            if (authOwner) {
+              location.href = authOwner;
+              return;
+            }
             if (confirm('Reauthorize ' + name.textContent + ' using Codex device login?'))
               startDevice('reauthorize', a.id);
           };
@@ -706,7 +718,7 @@
       notice();
       load();
     };
-    q('#add-codex').onclick = () => startDevice('add');
+    if (!authOwner) q('#add-codex').onclick = () => startDevice('add');
     q('#logout').onclick = async () => {
       try {
         await api('/api/logout', 'POST', {});

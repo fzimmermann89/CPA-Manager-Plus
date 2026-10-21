@@ -2,11 +2,31 @@ package operator
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestSharedAuthOwnerRefusesIndependentDeviceLogin(t *testing.T) {
+	s, _ := mockService(t)
+	s.ConfigureAuthOwner("https://api.example.test/privat/\"&")
+	r := httptest.NewRequest(http.MethodPost, "/api/codex/device/start", strings.NewReader(`{"mode":"add"}`))
+	r.Header.Set("Authorization", "Bearer operator-password")
+	w := httptest.NewRecorder()
+	s.PublicHandler("operator-password").ServeHTTP(w, r)
+	if w.Code != http.StatusConflict || s.device != nil {
+		t.Fatalf("shared follower started independent device login: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	s.PublicHandler("operator-password").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if strings.Contains(w.Body.String(), "__AUTH_OWNER__") || !strings.Contains(w.Body.String(), "privat/&#34;&amp;") {
+		t.Fatal("owner URL was not safely embedded")
+	}
+}
 
 func TestDeviceLoginRetryResumesSameAccountCode(t *testing.T) {
 	s, _ := mockService(t)

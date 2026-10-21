@@ -64,6 +64,7 @@ func main() {
 		log.Fatal(e)
 	}
 	s.ConfigureDeviceLogin(required("CPA_DEVICE_LOGIN_BINARY"), required("CPA_DEVICE_LOGIN_CONFIG"))
+	s.ConfigureAuthOwner(os.Getenv("CPA_AUTH_OWNER_URL"))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	s.Start(ctx)
@@ -83,6 +84,14 @@ func main() {
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) { http.Error(w, "CPA unavailable", 502) }
 	admin.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if owner := os.Getenv("CPA_AUTH_OWNER_URL"); owner != "" {
+			credentialPath := strings.Contains(r.URL.Path, "/auth-files") || strings.Contains(r.URL.Path, "/credentials")
+			credentialWrite := credentialPath && r.Method != "GET" && !strings.HasSuffix(r.URL.Path, "/status") && !strings.HasSuffix(r.URL.Path, "/reset-quota")
+			if credentialWrite || strings.Contains(r.URL.Path, "auth-url") || strings.Contains(r.URL.Path, "/oauth") {
+				http.Error(w, "Manage shared account credentials at "+owner, http.StatusConflict)
+				return
+			}
+		}
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/management.html", 302)
 			return

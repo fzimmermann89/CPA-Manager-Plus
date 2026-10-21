@@ -95,7 +95,12 @@ type Service struct {
 	recoveryMu sync.Mutex
 	recovery   map[string]recoveryState
 	device     *deviceLoginManager
+	authOwner  string
 }
+
+// ConfigureAuthOwner keeps shared account logins in the sole credential owner.
+// The URL is deployment configuration, never request input.
+func (s *Service) ConfigureAuthOwner(owner string) { s.authOwner = owner }
 
 // ConfigureDeviceLogin enables the narrow Codex device authorization action.
 // Both paths are deployment-owned absolute paths, never caller input.

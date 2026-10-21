@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -119,7 +120,8 @@ func (s *Service) PublicHandler(password string) http.Handler {
 		}
 		if r.URL.Path == "/" && r.Method == "GET" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write(panel)
+			page := strings.ReplaceAll(string(panel), "__AUTH_OWNER__", html.EscapeString(s.authOwner))
+			_, _ = w.Write([]byte(page))
 			return
 		}
 		if r.URL.Path == "/api/login" && r.Method == "POST" {
@@ -160,6 +162,10 @@ func (s *Service) PublicHandler(password string) http.Handler {
 		}
 		switch {
 		case r.URL.Path == "/api/codex/device/start" && r.Method == "POST":
+			if s.authOwner != "" {
+				reply(w, 409, map[string]string{"error": "Manage shared account logins at " + s.authOwner})
+				return
+			}
 			var v struct {
 				Mode      string `json:"mode"`
 				AccountID string `json:"account_id"`
